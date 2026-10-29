@@ -2,6 +2,7 @@
 // Implements client-side dynamic stamping, multi-page EN 10204 3.1 MTC stamping, and package merging using pdf-lib
 
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'
+import JSZip from 'jszip'
 import { getUploadedCertificateBytes } from './zipExtractor'
 
 export interface StampOptions {
@@ -518,6 +519,110 @@ export function downloadPDFBlob(pdfBytes: Uint8Array, filename: string) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// Merges multiple selected authentic MTC PDFs into a single combined package
+export async function mergeSelectedCertificates(
+  certificates: { fileName: string; heatNumber: string; itemCode: string; bytes: Uint8Array }[]
+): Promise<Uint8Array> {
+  const mergedPdf = await PDFDocument.create()
+  const fontBold = await mergedPdf.embedFont(StandardFonts.HelveticaBold)
+  const fontRegular = await mergedPdf.embedFont(StandardFonts.Helvetica)
+
+  // 1. Cover Sheet & Manifest Index
+  const coverPage = mergedPdf.addPage([595, 842])
+  const { width, height } = coverPage.getSize()
+
+  coverPage.drawRectangle({
+    x: 0,
+    y: height - 100,
+    width: width,
+    height: 100,
+    color: rgb(0.04, 0.14, 0.27),
+  })
+
+  coverPage.drawText('MSG OILFIELD EQUIPMENT TRADING LLC', {
+    x: 40,
+    y: height - 50,
+    size: 16,
+    font: fontBold,
+    color: rgb(1, 1, 1),
+  })
+
+  coverPage.drawText(`BATCH MTC CERTIFICATE COMPILATION (${certificates.length} CERTIFICATES)`, {
+    x: 40,
+    y: height - 75,
+    size: 10,
+    font: fontBold,
+    color: rgb(0.85, 0.2, 0.2),
+  })
+
+  coverPage.drawText(`Generated on: ${new Date().toISOString().substring(0, 10)} | Direct Batch Export`, {
+    x: 40,
+    y: height - 120,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.4, 0.4),
+  })
+
+  // Table header
+  coverPage.drawRectangle({
+    x: 40,
+    y: height - 150,
+    width: width - 80,
+    height: 20,
+    color: rgb(0.1, 0.2, 0.4),
+  })
+
+  coverPage.drawText('#', { x: 50, y: height - 143, size: 8, font: fontBold, color: rgb(1, 1, 1) })
+  coverPage.drawText('Heat Number', { x: 80, y: height - 143, size: 8, font: fontBold, color: rgb(1, 1, 1) })
+  coverPage.drawText('Item Code', { x: 190, y: height - 143, size: 8, font: fontBold, color: rgb(1, 1, 1) })
+  coverPage.drawText('Document Reference / File', { x: 330, y: height - 143, size: 8, font: fontBold, color: rgb(1, 1, 1) })
+
+  certificates.forEach((c, i) => {
+    const y = height - 175 - i * 20
+    if (y > 40) {
+      coverPage.drawText(String(i + 1), { x: 50, y, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) })
+      coverPage.drawText(c.heatNumber, { x: 80, y, size: 8, font: fontBold, color: rgb(0.8, 0.1, 0.1) })
+      coverPage.drawText(c.itemCode || '-', { x: 190, y, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) })
+      coverPage.drawText(c.fileName, { x: 330, y, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) })
+    }
+  })
+
+  // 2. Append each selected PDF
+  for (const cert of certificates) {
+    try {
+      const srcDoc = await PDFDocument.load(cert.bytes)
+      const pageIndices = srcDoc.getPageIndices()
+      const copiedPages = await mergedPdf.copyPages(srcDoc, pageIndices)
+      copiedPages.forEach(p => mergedPdf.addPage(p))
+    } catch (e) {
+      console.warn('Could not load cert bytes for merge:', cert.fileName, e)
+    }
+  }
+
+  return await mergedPdf.save()
+}
+
+// Download multiple selected certificates as a bundled ZIP archive
+export async function downloadCertificatesAsZip(
+  certificates: { fileName: string; bytes: Uint8Array }[],
+  zipName: string = 'MSG_Selected_Certificates.zip'
+): Promise<void> {
+  const zip = new JSZip()
+  certificates.forEach(c => {
+    const safeName = c.fileName.toLowerCase().endsWith('.pdf') ? c.fileName : `${c.fileName}.pdf`
+    zip.file(safeName, c.bytes)
+  })
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = zipName
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
