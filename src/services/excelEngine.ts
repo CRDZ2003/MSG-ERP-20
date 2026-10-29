@@ -529,3 +529,78 @@ export function exportDispatches(): void {
   XLSX.utils.book_append_sheet(wb, ws, 'Dispatch_Register')
   XLSX.writeFile(wb, `MSG_Dispatch_Register_${new Date().toISOString().substring(0, 10)}.xlsx`)
 }
+
+// Download Sales Order Import Template
+export function generateSalesOrderTemplate(): void {
+  const templateData = [
+    {
+      'Customer Name': 'McDermott Middle East Inc',
+      'Customer P.O.': 'PO-MCD-88412',
+      'Item Name': 'WSO15150F316',
+      'Required Qty': 5,
+      'Required Delivery Date': '2026-11-15'
+    },
+    {
+      'Customer Name': 'McDermott Middle East Inc',
+      'Customer P.O.': 'PO-MCD-88412',
+      'Item Name': 'WSO20150F316',
+      'Required Qty': 10,
+      'Required Delivery Date': '2026-11-15'
+    },
+    {
+      'Customer Name': 'Petrofac International Ltd',
+      'Customer P.O.': 'PO-PET-4911',
+      'Item Name': 'EL9050S80WPBBENKAN-STOCK',
+      'Required Qty': 8,
+      'Required Delivery Date': '2026-11-20'
+    }
+  ]
+
+  const ws = XLSX.utils.json_to_sheet(templateData)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales_Orders_Import')
+  XLSX.writeFile(wb, 'MSG_Sales_Orders_Import_Template.xlsx')
+}
+
+// Parse Sales Orders Excel
+export function parseSalesOrderExcel(file: File): Promise<{
+  customerName: string
+  poNumber: string
+  itemCode: string
+  requiredQty: number
+  deliveryDate?: string
+}[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array' })
+        const sheet = wb.Sheets[wb.SheetNames[0]]
+        const json: any[] = XLSX.utils.sheet_to_json(sheet)
+
+        const rows = json.map(r => {
+          const cust = r['Customer Name'] || r['Customer'] || r['customer_name'] || 'General Client'
+          const po = r['Customer P.O.'] || r['PO Number'] || r['P.O. Number'] || r['po_number'] || 'PO-ONLINE'
+          const item = r['Item Name'] || r['Item Code'] || r['item_code'] || r['Item'] || ''
+          const qty = parseInt(String(r['Required Qty'] || r['Quantity'] || r['Qty'] || 1).replace(/[^0-9]/g, ''), 10) || 1
+          const date = r['Required Delivery Date'] || r['Delivery Date'] || r['delivery_date'] || ''
+
+          return {
+            customerName: String(cust).trim(),
+            poNumber: String(po).trim(),
+            itemCode: String(item).trim().toUpperCase(),
+            requiredQty: qty,
+            deliveryDate: date ? String(date).trim() : undefined
+          }
+        }).filter(r => r.itemCode.length > 0)
+
+        resolve(rows)
+      } catch (err) {
+        reject(err)
+      }
+    }
+    reader.onerror = (err) => reject(err)
+    reader.readAsArrayBuffer(file)
+  })
+}

@@ -920,26 +920,76 @@ class DBService {
 
   // Create Sales Order
   public createSalesOrder(orderData: {
-    customer_id: string
+    customer_id?: string
+    customer_name?: string
     po_number: string
     required_delivery_date: string
-    items: { item_id: string; required_qty: number }[]
+    items: { item_id?: string; item_code?: string; required_qty: number }[]
+    po_document_name?: string
+    po_document_url?: string
     userEmail: string
   }) {
-    const customer = this.customers.find(c => c.id === orderData.customer_id)
-    if (!customer) return { success: false, message: 'Customer not found' }
+    let customer = orderData.customer_id ? this.customers.find(c => c.id === orderData.customer_id) : null
+    if (!customer && orderData.customer_name) {
+      customer = this.customers.find(c => c.customer_name.toLowerCase().trim() === orderData.customer_name!.toLowerCase().trim())
+      if (!customer) {
+        // Register new customer on the fly
+        const newCust: Customer = {
+          id: 'CUST-' + (this.customers.length + 1).toString().padStart(3, '0'),
+          customer_code: 'CUST-' + (this.customers.length + 1).toString().padStart(3, '0'),
+          customer_name: orderData.customer_name.trim(),
+          address: 'Abu Dhabi / Dubai, UAE',
+          contact_details: 'procurement@client.ae',
+          status: 'Active',
+          created_at: new Date().toISOString()
+        }
+        this.customers.push(newCust)
+        customer = newCust
+      }
+    }
+    if (!customer) {
+      customer = this.customers[0] || {
+        id: 'CUST-001',
+        customer_code: 'CUST-001',
+        customer_name: 'Valued Client',
+        address: 'UAE',
+        contact_details: 'sales@client.ae',
+        status: 'Active',
+        created_at: new Date().toISOString()
+      }
+    }
 
     const count = this.orders.length + 116
     const soNumber = `SO-2026-${count}`
     const orderId = `ORD-${count}`
 
     const soItems = orderData.items.map((item, idx) => {
-      const itm = this.items.find(i => i.id === item.item_id)
+      let itm = item.item_id ? this.items.find(i => i.id === item.item_id) : null
+      if (!itm && item.item_code) {
+        itm = this.items.find(i => i.item_code.toLowerCase().trim() === item.item_code!.toLowerCase().trim())
+        if (!itm) {
+          // Add item if missing
+          itm = {
+            id: 'ITEM-' + (this.items.length + 1).toString().padStart(3, '0'),
+            item_code: item.item_code.trim().toUpperCase(),
+            item_description: `Oilfield Material ${item.item_code}`,
+            material_grade: 'SS316/316L',
+            specification: 'ASME B16.5',
+            size: 'Standard',
+            uom: 'PCS',
+            unit_price_aed: 50,
+            is_active: true,
+            created_at: new Date().toISOString()
+          }
+          this.items.push(itm)
+        }
+      }
+
       return {
         id: `SOI-${count}-${idx + 1}`,
         sales_order_id: orderId,
-        item_id: item.item_id,
-        item_code: itm?.item_code || '',
+        item_id: itm?.id || `ITEM-${idx + 1}`,
+        item_code: itm?.item_code || item.item_code || 'GENERIC-ITEM',
         item_description: itm?.item_description || '',
         required_qty: item.required_qty,
         allocated_qty: 0,
@@ -956,10 +1006,12 @@ class DBService {
       customer_id: customer.id,
       customer_name: customer.customer_name,
       order_date: new Date().toISOString().substring(0, 10),
-      required_delivery_date: orderData.required_delivery_date || '',
+      required_delivery_date: orderData.required_delivery_date || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
       status: 'Draft',
       created_by: orderData.userEmail,
       mtc_package_generated: false,
+      po_document_name: orderData.po_document_name,
+      po_document_url: orderData.po_document_url,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       items: soItems,
@@ -972,6 +1024,53 @@ class DBService {
     this.notify()
 
     return { success: true, order: newOrder, message: `Sales Order ${soNumber} created successfully.` }
+  }
+
+  // Import Sales Orders from Parsed Excel Records
+  public importSalesOrdersFromExcel(
+    rows: { customerName: string; poNumber: string; itemCode: string; requiredQty: number; deliveryDate?: string }[],
+    userEmail: string
+  ) {
+    if (rows.length === 0) return { success: false, message: 'No rows provided to import.' }
+
+    // Group rows by PO Number and Customer Name
+    const groups = new Map<string, typeof rows>()
+    rows.forEach(r => {
+      const key = `${(r.customerName || 'General Client').trim()}|||${(r.poNumber || 'PO-IMPORT').trim()}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(r)
+    })
+
+    const createdOrders: SalesOrder[] = []
+
+    groups.forEach((groupRows, key) => {
+      const [customerName, poNumber] = key.split('|||')
+      const deliveryDate = groupRows[0].deliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10)
+
+      const items = groupRows.map(gr => ({
+        item_code: gr.itemCode,
+        required_qty: gr.requiredQty
+      }))
+
+      const res = this.createSalesOrder({
+        customer_name: customerName,
+        po_number: poNumber,
+        required_delivery_date: deliveryDate,
+        items,
+        userEmail
+      })
+
+      if (res.success && res.order) {
+        createdOrders.push(res.order)
+      }
+    })
+
+    return {
+      success: true,
+      count: createdOrders.length,
+      orders: createdOrders,
+      message: `Successfully created ${createdOrders.length} Sales Order(s) from spreadsheet.`
+    }
   }
 
   // Add Item to Item Master

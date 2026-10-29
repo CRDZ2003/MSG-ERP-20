@@ -2,7 +2,11 @@ import React, { useState } from 'react'
 import { db } from '../../services/db'
 import { useAuth } from '../../context/AuthContext'
 import { SalesOrder } from '../../types'
-import { exportSalesOrders } from '../../services/excelEngine'
+import {
+  exportSalesOrders,
+  generateSalesOrderTemplate,
+  parseSalesOrderExcel,
+} from '../../services/excelEngine'
 import {
   FileSpreadsheet,
   Plus,
@@ -17,6 +21,11 @@ import {
   Flame,
   ArrowRight,
   Download,
+  FileUp,
+  Paperclip,
+  Sparkles,
+  ExternalLink,
+  ShoppingCart,
 } from 'lucide-react'
 
 interface SalesOrderManagementProps {
@@ -34,6 +43,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter || 'all')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [cancelModalOrder, setCancelModalOrder] = useState<SalesOrder | null>(null)
   const [cancelReason, setCancelReason] = useState('')
 
@@ -44,6 +54,12 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
   const [orderLines, setOrderLines] = useState<{ itemId: string; requiredQty: number }[]>([
     { itemId: '', requiredQty: 5 }
   ])
+  const [poFile, setPoFile] = useState<File | null>(null)
+
+  // Excel SO Import state
+  const [importFileName, setImportFileName] = useState('')
+  const [parsedImportRows, setParsedImportRows] = useState<any[]>([])
+  const [isImportingSO, setIsImportingSO] = useState(false)
 
   const orders = db.getOrders()
   const customers = db.getCustomers()
@@ -77,11 +93,18 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       return
     }
 
+    let docUrl: string | undefined = undefined
+    if (poFile) {
+      docUrl = URL.createObjectURL(poFile)
+    }
+
     const res = db.createSalesOrder({
       customer_id: customerId,
       po_number: poNumber || 'PO-VALUED',
       required_delivery_date: deliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
       items: orderLines.map(l => ({ item_id: l.itemId, required_qty: Number(l.requiredQty) })),
+      po_document_name: poFile ? poFile.name : undefined,
+      po_document_url: docUrl,
       userEmail: currentUser?.email || 'sales@msgoilfield.ae'
     })
 
@@ -90,10 +113,74 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       setOrderLines([{ itemId: '', requiredQty: 5 }])
       setCustomerId('')
       setPoNumber('')
+      setPoFile(null)
       // Direct user straight to allocation
       onNavigateToAllocation(res.order.id)
     } else {
       alert(res.message || 'Error creating sales order')
+    }
+  }
+
+  // Handle Excel SO file upload
+  const handleExcelSOChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImportFileName(file.name)
+    try {
+      const rows = await parseSalesOrderExcel(file)
+      setParsedImportRows(rows)
+    } catch (err: any) {
+      alert('Failed to parse Sales Order spreadsheet: ' + err.message)
+    }
+  }
+
+  // Commit Excel SO import
+  const handleCommitSOImport = () => {
+    if (parsedImportRows.length === 0) return
+    setIsImportingSO(true)
+
+    try {
+      const res = db.importSalesOrdersFromExcel(
+        parsedImportRows,
+        currentUser?.email || 'sales@msgoilfield.ae'
+      )
+
+      if (res.success) {
+        alert(res.message)
+        setIsImportModalOpen(false)
+        setParsedImportRows([])
+        setImportFileName('')
+      } else {
+        alert(res.message)
+      }
+    } catch (err: any) {
+      alert('Error importing Sales Orders: ' + err.message)
+    } finally {
+      setIsImportingSO(false)
+    }
+  }
+
+  // Load a quick sample test order for testing
+  const handleLoadSampleOrder = () => {
+    const cust = customers[0] || { id: 'CUST-001', customer_name: 'McDermott Middle East Inc' }
+    const itm1 = items[0] || { id: 'ITEM-001' }
+    const itm2 = items[1] || { id: 'ITEM-002' }
+
+    const res = db.createSalesOrder({
+      customer_id: cust.id,
+      po_number: `PO-TEST-${Date.now().toString().slice(-4)}`,
+      required_delivery_date: new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
+      items: [
+        { item_id: itm1.id, required_qty: 5 },
+        { item_id: itm2.id, required_qty: 10 }
+      ],
+      po_document_name: 'Customer_PO_Approved.pdf',
+      userEmail: currentUser?.email || 'sales@msgoilfield.ae'
+    })
+
+    if (res.success && res.order) {
+      onNavigateToAllocation(res.order.id)
     }
   }
 
@@ -138,15 +225,26 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canCreateOrder && (
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-3.5 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create Sales Order</span>
-            </button>
+            <>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-3.5 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Sales Order</span>
+              </button>
+
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3.5 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+                title="Upload Sales Orders from an Excel spreadsheet"
+              >
+                <FileUp className="h-4 w-4" />
+                <span>Upload SO (.xlsx)</span>
+              </button>
+            </>
           )}
 
           <button
@@ -193,11 +291,50 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         </div>
       </div>
 
-      {/* Sales Orders List */}
+      {/* Sales Orders List / Actionable Empty State */}
       <div className="space-y-3">
         {filteredOrders.length === 0 ? (
-          <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400 text-xs">
-            No Sales Orders found matching the criteria.
+          <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-center max-w-lg mx-auto my-6 space-y-4">
+            <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto border border-red-100">
+              <ShoppingCart className="h-7 w-7" />
+            </div>
+
+            <div>
+              <h3 className="font-bold text-sm text-slate-800 uppercase tracking-tight">No Sales Orders Found</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                You can create a customer sales order using the interactive form, attach a PO document, or upload orders in bulk from an Excel spreadsheet.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 pt-2">
+              {canCreateOrder && (
+                <>
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Create Order (Form)</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+                  >
+                    <FileUp className="h-4 w-4" />
+                    <span>Upload from Excel (.xlsx)</span>
+                  </button>
+
+                  <button
+                    onClick={handleLoadSampleOrder}
+                    className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-4 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    <span>Load Demo Order</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           filteredOrders.map(order => {
@@ -219,6 +356,12 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                     <span className="font-mono font-bold text-sm text-[#0B2545]">{order.so_number}</span>
                     <span className="text-xs font-semibold text-slate-700">&bull; {order.customer_name}</span>
                     <span className="text-xs text-slate-400">PO: {order.po_number}</span>
+                    {order.po_document_name && (
+                      <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                        <Paperclip className="h-3 w-3" />
+                        <span>{order.po_document_name}</span>
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-2">
@@ -239,109 +382,104 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                         className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center space-x-1 shadow"
                       >
                         <Flame className="h-3.5 w-3.5" />
-                        <span>Allocate Stock</span>
+                        <span>Allocate Stock (FIFO / Manual)</span>
                       </button>
                     )}
 
                     {order.status === 'Stock Allocated' && (
                       <button
                         onClick={() => handleSubmitForStoreApproval(order)}
-                        className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg shadow"
+                        className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center space-x-1 shadow"
                       >
-                        Submit for Storekeeper Check
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>Submit for Store Approval</span>
                       </button>
                     )}
 
-                    {!isCancelled && !isDispatched && (
+                    {!isCancelled && !isDispatched && canCreateOrder && (
                       <button
                         onClick={() => setCancelModalOrder(order)}
-                        className="text-red-600 hover:bg-red-50 font-semibold text-xs px-2.5 py-1.5 rounded-lg border border-red-200 transition-colors"
+                        className="text-slate-400 hover:text-red-600 font-semibold text-xs p-1.5 rounded"
+                        title="Cancel Sales Order"
                       >
-                        Cancel Order
+                        <XCircle className="h-4 w-4" />
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Items & Allocations Detail Table */}
+                {/* Line Items Table */}
                 <div className="p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Order Line Items & Allocated Heats</div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="text-slate-400 border-b border-slate-100 text-[10px] uppercase">
-                          <th className="pb-1.5">Item Code & Specification</th>
-                          <th className="pb-1.5 text-center">Required Qty</th>
-                          <th className="pb-1.5 text-center">Allocated Qty</th>
-                          <th className="pb-1.5 text-center">Dispatched Qty</th>
-                          <th className="pb-1.5">Allocated Heat Numbers</th>
-                          <th className="pb-1.5">Line Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {order.items.map(item => {
-                          const itemAllocations = order.allocations.filter(a => a.sales_order_item_id === item.id)
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] uppercase text-slate-400 border-b border-slate-100">
+                      <tr>
+                        <th className="pb-2">Item Code</th>
+                        <th className="pb-2">Description</th>
+                        <th className="pb-2 text-center">Required</th>
+                        <th className="pb-2 text-center">Allocated</th>
+                        <th className="pb-2 text-center">Dispatched</th>
+                        <th className="pb-2">Allocated Heat Numbers</th>
+                        <th className="pb-2 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {order.items.map(item => {
+                        const itemAllocations = order.allocations.filter(a => a.sales_order_item_id === item.id)
 
-                          return (
-                            <tr key={item.id} className="py-2">
-                              <td className="py-2">
-                                <span className="font-mono font-bold text-slate-800">{item.item_code}</span>
-                                <div className="text-[11px] text-slate-500">{item.item_description}</div>
-                              </td>
-                              <td className="py-2 text-center font-bold text-slate-900">{item.required_qty} {item.uom}</td>
-                              <td className="py-2 text-center font-bold text-amber-700">{item.allocated_qty} {item.uom}</td>
-                              <td className="py-2 text-center font-bold text-indigo-700">{item.dispatched_qty} {item.uom}</td>
-                              <td className="py-2">
-                                {itemAllocations.length === 0 ? (
-                                  <span className="text-slate-400 italic">No heat allocated yet</span>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {itemAllocations.map(a => (
-                                      <span
-                                        key={a.id}
-                                        className={`font-mono text-[11px] px-2 py-0.5 rounded font-bold ${
-                                          a.allocation_status === 'Released'
-                                            ? 'bg-red-100 text-red-700 line-through'
-                                            : a.allocation_status === 'Dispatched'
-                                            ? 'bg-indigo-100 text-indigo-800'
-                                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                        }`}
-                                      >
-                                        Heat: {a.heat_number} ({a.allocated_qty} PCS)
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-2">
-                                <span className="font-medium text-slate-600">{item.line_status}</span>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                        return (
+                          <tr key={item.id}>
+                            <td className="py-2.5 font-mono font-bold text-slate-800">{item.item_code}</td>
+                            <td className="py-2.5 text-slate-600">{item.item_description}</td>
+                            <td className="py-2.5 text-center font-bold text-slate-900">{item.required_qty} {item.uom}</td>
+                            <td className="py-2.5 text-center font-semibold text-blue-700">{item.allocated_qty} {item.uom}</td>
+                            <td className="py-2.5 text-center font-semibold text-emerald-700">{item.dispatched_qty} {item.uom}</td>
+                            <td className="py-2.5">
+                              {itemAllocations.length === 0 ? (
+                                <span className="text-slate-400 italic text-[11px]">Unallocated</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {itemAllocations.map(a => (
+                                    <span
+                                      key={a.id}
+                                      className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                                        a.allocation_status === 'Dispatched' ? 'bg-emerald-100 text-emerald-800' :
+                                        a.allocation_status === 'Released' ? 'bg-slate-100 text-slate-500 line-through' :
+                                        'bg-blue-100 text-blue-800'
+                                      }`}
+                                    >
+                                      {a.heat_number} ({a.allocated_qty} PCS)
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 text-right">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                                item.line_status === 'Dispatched' ? 'bg-emerald-100 text-emerald-800' :
+                                item.line_status === 'Allocated' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {item.line_status}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Audit Footer */}
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex flex-wrap justify-between items-center text-[11px] text-slate-400">
+                    <div>
+                      <span>Created: {order.order_date} by {order.created_by}</span>
+                      {order.approved_by && <span className="ml-2 font-semibold text-blue-700">&bull; Approved by {order.approved_by}</span>}
+                      {order.cancellation_reason && (
+                        <span className="ml-2 text-red-600 font-semibold">&bull; Cancelled: {order.cancellation_reason} ({order.cancellation_date})</span>
+                      )}
+                    </div>
+                    <div>
+                      <span>Delivery Target: {order.required_delivery_date || 'Standard'}</span>
+                    </div>
                   </div>
-
-                  {/* Cancellation Reason Note if cancelled */}
-                  {isCancelled && (
-                    <div className="mt-3 p-3 bg-red-100/70 border border-red-200 rounded-lg text-xs text-red-900">
-                      <span className="font-bold">Cancellation Record: </span>
-                      <span>Order was cancelled on {order.cancellation_date}. </span>
-                      <span className="italic">Reason: "{order.cancellation_reason}"</span>
-                      <div className="text-[11px] text-red-700 mt-0.5">
-                        &bull; All outstanding reserved stocks have been safely restored to available inventory. Historical audit log preserved.
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Storekeeper verification remarks */}
-                  {order.store_remarks && !isCancelled && (
-                    <div className="mt-2.5 p-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900">
-                      <span className="font-bold">Storekeeper Note: </span>
-                      <span>{order.store_remarks}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             )
@@ -349,12 +487,15 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         )}
       </div>
 
-      {/* Create Sales Order Modal */}
+      {/* CREATE ORDER MODAL (WITH PO DOCUMENT ATTACHMENT) */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-[#0B2545] p-4 text-white flex justify-between items-center">
-              <h3 className="font-bold text-sm uppercase">Create New Sales Order</h3>
+              <div className="flex items-center space-x-2">
+                <Plus className="h-4 w-4 text-red-400" />
+                <h3 className="font-bold text-sm uppercase">Create Customer Sales Order</h3>
+              </div>
               <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-300 hover:text-white">✕</button>
             </div>
 
@@ -375,25 +516,45 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Customer P.O. Number</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Customer P.O. Number *</label>
                   <input
                     type="text"
+                    required
                     placeholder="e.g. PO-ADNOC-7701"
                     value={poNumber}
                     onChange={(e) => setPoNumber(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2"
+                    className="w-full border border-slate-300 rounded-lg p-2 font-mono uppercase"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Required Delivery Date</label>
-                <input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Required Delivery Date</label>
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={(e) => setDeliveryDate(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+
+                {/* Upload Customer PO Document */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Upload Customer PO Document (PDF / Scan)</label>
+                  <div className="relative border border-slate-300 rounded-lg p-1.5 bg-slate-50 hover:bg-slate-100 flex items-center justify-between cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".pdf,image/*"
+                      onChange={(e) => setPoFile(e.target.files?.[0] || null)}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    />
+                    <span className="text-[11px] text-slate-600 truncate max-w-[170px]">
+                      {poFile ? poFile.name : 'Select PO document...'}
+                    </span>
+                    <Paperclip className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  </div>
+                </div>
               </div>
 
               {/* Order Lines */}
@@ -409,7 +570,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                   </button>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {orderLines.map((line, idx) => (
                     <div key={idx} className="flex items-center space-x-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                       <div className="flex-1">
@@ -442,7 +603,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                             setOrderLines(updated)
                           }}
                           placeholder="Qty PCS"
-                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs text-center"
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs text-center font-bold"
                         />
                       </div>
 
@@ -480,33 +641,130 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         </div>
       )}
 
-      {/* Cancel Order Confirmation Modal */}
+      {/* UPLOAD SALES ORDERS FROM EXCEL MODAL */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="bg-[#0B2545] p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center space-x-2">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+                <h3 className="font-bold text-sm uppercase">Upload Sales Orders (.xlsx / .csv)</h3>
+              </div>
+              <button onClick={() => setIsImportModalOpen(false)} className="text-slate-300 hover:text-white">✕</button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-slate-600">Upload bulk customer purchase orders in spreadsheet format.</span>
+                <button
+                  type="button"
+                  onClick={generateSalesOrderTemplate}
+                  className="text-emerald-700 font-bold hover:underline flex items-center space-x-1"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download SO Template (.xlsx)</span>
+                </button>
+              </div>
+
+              <div className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-xl p-6 text-center bg-slate-50 transition-colors relative">
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleExcelSOChange}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+                <FileUp className="h-8 w-8 text-indigo-500 mx-auto mb-1.5" />
+                <div className="font-bold text-slate-700">Click or Drop Sales Orders Spreadsheet (.xlsx)</div>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Columns: Customer Name, Customer P.O., Item Name, Required Qty, Required Delivery Date
+                </p>
+                {importFileName && (
+                  <div className="mt-2 text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 py-1 px-3 rounded inline-block border border-indigo-200">
+                    Loaded: {importFileName} ({parsedImportRows.length} items parsed)
+                  </div>
+                )}
+              </div>
+
+              {parsedImportRows.length > 0 && (
+                <div className="space-y-2">
+                  <div className="font-bold text-slate-800 uppercase tracking-tight text-[11px]">
+                    Parsed Orders Preview ({parsedImportRows.length} Line Items)
+                  </div>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase sticky top-0">
+                        <tr>
+                          <th className="p-2">Customer</th>
+                          <th className="p-2">P.O. Number</th>
+                          <th className="p-2">Item Code</th>
+                          <th className="p-2 text-center">Qty</th>
+                          <th className="p-2">Target Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {parsedImportRows.map((r, i) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="p-2 font-medium text-slate-800">{r.customerName}</td>
+                            <td className="p-2 font-mono text-slate-600">{r.poNumber}</td>
+                            <td className="p-2 font-mono font-bold text-blue-700">{r.itemCode}</td>
+                            <td className="p-2 text-center font-bold text-slate-900">{r.requiredQty} PCS</td>
+                            <td className="p-2 text-slate-500">{r.deliveryDate || 'Standard'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-medium text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCommitSOImport}
+                disabled={isImportingSO || parsedImportRows.length === 0}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-lg font-bold text-xs shadow flex items-center space-x-1.5"
+              >
+                <span>{isImportingSO ? 'Importing Orders...' : `Commit ${parsedImportRows.length} Items into Sales Orders`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CANCEL SALES ORDER MODAL */}
       {cancelModalOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-red-700 p-4 text-white flex justify-between items-center">
               <div className="flex items-center space-x-2">
                 <AlertTriangle className="h-4 w-4" />
-                <h3 className="font-bold text-sm uppercase">Cancel Sales Order {cancelModalOrder.so_number}</h3>
+                <h3 className="font-bold text-sm uppercase">Cancel Sales Order: {cancelModalOrder.so_number}</h3>
               </div>
-              <button onClick={() => setCancelModalOrder(null)} className="text-white/80 hover:text-white">✕</button>
+              <button onClick={() => setCancelModalOrder(null)} className="text-slate-300 hover:text-white">✕</button>
             </div>
 
-            <div className="p-5 space-y-3.5 text-xs">
-              <p className="text-slate-700">
-                Are you sure you want to cancel order <strong>{cancelModalOrder.so_number}</strong>?
-              </p>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900">
-                <span className="font-bold">Automated Reversal Policy: </span>
-                Any reserved stock allocations will be immediately released and restored back to available stock. Dispatched items (if any) will NOT be reversed without an approved Return.
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-900">
+                <div className="font-bold">Important Audit Notice:</div>
+                <div className="mt-1 text-[11px] leading-relaxed">
+                  Per MSG Oilfield quality standards, cancelled orders remain permanently archived for full audit traceability. Un-dispatched stock allocations will be immediately restored to available inventory.
+                </div>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Mandatory Cancellation Reason *</label>
+                <label className="block font-semibold text-slate-700 mb-1">Reason for Cancellation *</label>
                 <textarea
-                  rows={3}
                   required
-                  placeholder="e.g. Client requested cancellation due to project scope change..."
+                  rows={3}
+                  placeholder="e.g. Customer cancelled project PO, or specifications changed."
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg p-2 text-slate-800"
@@ -519,14 +777,14 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                   onClick={() => setCancelModalOrder(null)}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium"
                 >
-                  No, Keep Order
+                  Abort
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmCancel}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow"
+                  className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow"
                 >
-                  Confirm Cancellation & Release Stock
+                  Confirm Order Cancellation
                 </button>
               </div>
             </div>

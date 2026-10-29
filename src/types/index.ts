@@ -128,6 +128,8 @@ export interface SalesOrder {
   store_remarks?: string
   mtc_package_generated: boolean
   mtc_package_url?: string
+  po_document_name?: string
+  po_document_url?: string
   created_at: string
   updated_at: string
   items: SalesOrderItem[]
