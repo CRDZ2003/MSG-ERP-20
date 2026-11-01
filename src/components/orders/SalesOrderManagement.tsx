@@ -26,7 +26,14 @@ import {
   Sparkles,
   ExternalLink,
   ShoppingCart,
+  FileText,
+  Eye,
 } from 'lucide-react'
+import {
+  generateSalesOrderPDF,
+  parseCustomerSOPDF,
+  downloadPDFBlob,
+} from '../../services/pdfEngine'
 
 interface SalesOrderManagementProps {
   onSelectOrder: (order: SalesOrder) => void
@@ -44,6 +51,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter || 'all')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false)
   const [cancelModalOrder, setCancelModalOrder] = useState<SalesOrder | null>(null)
   const [cancelReason, setCancelReason] = useState('')
 
@@ -60,6 +68,19 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
   const [importFileName, setImportFileName] = useState('')
   const [parsedImportRows, setParsedImportRows] = useState<any[]>([])
   const [isImportingSO, setIsImportingSO] = useState(false)
+
+  // PDF Customer SO Ingestion state
+  const [isParsingPdf, setIsParsingPdf] = useState(false)
+  const [pdfParsedData, setPdfParsedData] = useState<{
+    customerName: string
+    poNumber: string
+    deliveryDate: string
+    items: { itemCode: string; requiredQty: number }[]
+    pdfBlobUrl: string
+    fileName: string
+    file?: File
+  } | null>(null)
+  const [generatingPdfSoId, setGeneratingPdfSoId] = useState<string | null>(null)
 
   const orders = db.getOrders()
   const customers = db.getCustomers()
@@ -161,6 +182,65 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
     }
   }
 
+  // Handle Customer Sales Order / PO PDF upload & parsing
+  const handlePdfFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsParsingPdf(true)
+    try {
+      const data = await parseCustomerSOPDF(file)
+      setPdfParsedData({
+        ...data,
+        file
+      })
+    } catch (err: any) {
+      alert('Error parsing Customer PO PDF: ' + err.message)
+    } finally {
+      setIsParsingPdf(false)
+    }
+  }
+
+  // Commit parsed PDF Sales Order
+  const handleCommitPdfSO = () => {
+    if (!pdfParsedData) return
+
+    const res = db.createSalesOrder({
+      customer_name: pdfParsedData.customerName,
+      po_number: pdfParsedData.poNumber || 'PO-PDF',
+      required_delivery_date: pdfParsedData.deliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
+      items: pdfParsedData.items.map(it => ({
+        item_code: it.itemCode,
+        required_qty: it.requiredQty
+      })),
+      po_document_name: pdfParsedData.fileName,
+      po_document_url: pdfParsedData.pdfBlobUrl,
+      userEmail: currentUser?.email || 'sales@msgoilfield.ae'
+    })
+
+    if (res.success && res.order) {
+      alert(`Sales Order ${res.order.so_number} created successfully from customer PDF!`)
+      setIsPdfModalOpen(false)
+      setPdfParsedData(null)
+      onNavigateToAllocation(res.order.id)
+    } else {
+      alert(res.message || 'Error creating order from PDF')
+    }
+  }
+
+  // Generate & download official publication-quality Sales Order PDF
+  const handleDownloadSOPDF = async (order: SalesOrder) => {
+    setGeneratingPdfSoId(order.id)
+    try {
+      const pdfBytes = await generateSalesOrderPDF(order)
+      downloadPDFBlob(pdfBytes, `${order.so_number}_ORDER_CONFIRMATION.pdf`)
+    } catch (err: any) {
+      alert('Failed to generate Sales Order PDF: ' + err.message)
+    } finally {
+      setGeneratingPdfSoId(null)
+    }
+  }
+
   // Load a quick sample test order for testing
   const handleLoadSampleOrder = () => {
     const cust = customers[0] || { id: 'CUST-001', customer_name: 'McDermott Middle East Inc' }
@@ -237,6 +317,15 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
               </button>
 
               <button
+                onClick={() => setIsPdfModalOpen(true)}
+                className="bg-red-700 hover:bg-red-800 text-white font-semibold text-xs px-3.5 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+                title="Upload Customer Sales Order / PO directly from PDF"
+              >
+                <FileText className="h-4 w-4 text-red-200" />
+                <span>Upload SO (PDF)</span>
+              </button>
+
+              <button
                 onClick={() => setIsImportModalOpen(true)}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3.5 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
                 title="Upload Sales Orders from an Excel spreadsheet"
@@ -302,7 +391,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
             <div>
               <h3 className="font-bold text-sm text-slate-800 uppercase tracking-tight">No Sales Orders Found</h3>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                You can create a customer sales order using the interactive form, attach a PO document, or upload orders in bulk from an Excel spreadsheet.
+                You can create a customer sales order using the interactive form, upload customer PO PDFs directly, or import orders in bulk from an Excel spreadsheet.
               </p>
             </div>
 
@@ -315,6 +404,14 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                   >
                     <Plus className="h-4 w-4" />
                     <span>Create Order (Form)</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsPdfModalOpen(true)}
+                    className="bg-red-700 hover:bg-red-800 text-white text-xs font-bold px-4 py-2 rounded-lg shadow transition-colors flex items-center space-x-1.5"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>Upload Customer PO (PDF)</span>
                   </button>
 
                   <button
@@ -374,6 +471,31 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                     }`}>
                       {order.status}
                     </span>
+
+                    {/* Official MSG Sales Order Confirmation PDF Download */}
+                    <button
+                      onClick={() => handleDownloadSOPDF(order)}
+                      disabled={generatingPdfSoId === order.id}
+                      className="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow transition-colors"
+                      title="Download official publication-grade Sales Order confirmation PDF"
+                    >
+                      <Download className="h-3.5 w-3.5 text-slate-300" />
+                      <span>{generatingPdfSoId === order.id ? 'Generating...' : 'SO PDF'}</span>
+                    </button>
+
+                    {/* Customer Attached PO Document Link */}
+                    {order.po_document_url && (
+                      <a
+                        href={order.po_document_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-semibold text-xs px-2 py-1.5 rounded-lg flex items-center space-x-1 transition-colors"
+                        title="View original uploaded Customer PO PDF document"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>View PO</span>
+                      </a>
+                    )}
 
                     {/* Action buttons */}
                     {canAllocate && (
@@ -733,6 +855,203 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-lg font-bold text-xs shadow flex items-center space-x-1.5"
               >
                 <span>{isImportingSO ? 'Importing Orders...' : `Commit ${parsedImportRows.length} Items into Sales Orders`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UPLOAD SALES ORDER FROM CUSTOMER PDF MODAL */}
+      {isPdfModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#0B2545] p-4 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center space-x-2">
+                <FileText className="h-4 w-4 text-red-400" />
+                <h3 className="font-bold text-sm uppercase">Upload Customer Sales Order (PDF)</h3>
+              </div>
+              <button onClick={() => { setIsPdfModalOpen(false); setPdfParsedData(null); }} className="text-slate-300 hover:text-white">✕</button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto text-xs">
+              <div className="pb-2 border-b border-slate-100">
+                <span className="text-slate-600">
+                  Upload incoming customer PO / Sales Order in official PDF format. The system automatically reads PO details, customer info, and line items, while preserving the authentic PDF.
+                </span>
+              </div>
+
+              {/* PDF Dropzone */}
+              <div className="border-2 border-dashed border-slate-300 hover:border-red-500 rounded-xl p-6 text-center bg-slate-50 transition-colors relative">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handlePdfFileChange}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+                <FileText className="h-9 w-9 text-red-600 mx-auto mb-1.5" />
+                <div className="font-bold text-slate-700">Click or Drop Customer Sales Order PDF</div>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Accepts standard oilfield customer Purchase Orders (ADNOC, McDermott, Petrofac, Saipem, etc.)
+                </p>
+                {isParsingPdf && (
+                  <div className="mt-2 text-xs font-semibold text-red-600 animate-pulse">
+                    Parsing PDF text streams and extracting PO data...
+                  </div>
+                )}
+                {pdfParsedData && !isParsingPdf && (
+                  <div className="mt-2 text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 py-1 px-3 rounded inline-block border border-emerald-200">
+                    Loaded: {pdfParsedData.fileName}
+                  </div>
+                )}
+              </div>
+
+              {/* Extracted Data Form / Preview */}
+              {pdfParsedData && (
+                <div className="space-y-3 bg-slate-50/80 p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 uppercase tracking-tight text-[11px]">
+                      Extracted Customer Order Details
+                    </span>
+                    {pdfParsedData.pdfBlobUrl && (
+                      <a
+                        href={pdfParsedData.pdfBlobUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:text-blue-800 font-semibold text-[11px] flex items-center space-x-1"
+                      >
+                        <Eye className="h-3 w-3" />
+                        <span>Preview Uploaded PDF</span>
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Customer Name</label>
+                      <input
+                        type="text"
+                        value={pdfParsedData.customerName}
+                        onChange={(e) => setPdfParsedData({ ...pdfParsedData, customerName: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg p-2 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Customer P.O. Number</label>
+                      <input
+                        type="text"
+                        value={pdfParsedData.poNumber}
+                        onChange={(e) => setPdfParsedData({ ...pdfParsedData, poNumber: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg p-2 font-mono uppercase bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Required Delivery Date</label>
+                    <input
+                      type="date"
+                      value={pdfParsedData.deliveryDate}
+                      onChange={(e) => setPdfParsedData({ ...pdfParsedData, deliveryDate: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg p-2 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="font-semibold text-slate-700">Detected Line Items ({pdfParsedData.items.length})</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPdfParsedData({
+                            ...pdfParsedData,
+                            items: [...pdfParsedData.items, { itemCode: 'WSO15150F316', requiredQty: 5 }]
+                          })
+                        }}
+                        className="text-red-600 hover:text-red-700 font-semibold text-[11px]"
+                      >
+                        + Add Item
+                      </button>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-lg overflow-hidden max-h-40 overflow-y-auto bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">
+                          <tr>
+                            <th className="p-2">Item Code</th>
+                            <th className="p-2 text-center w-24">Required Qty</th>
+                            <th className="p-2 text-right w-12">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {pdfParsedData.items.map((it, idx) => (
+                            <tr key={idx}>
+                              <td className="p-2">
+                                <input
+                                  type="text"
+                                  value={it.itemCode}
+                                  onChange={(e) => {
+                                    const updated = [...pdfParsedData.items]
+                                    updated[idx].itemCode = e.target.value
+                                    setPdfParsedData({ ...pdfParsedData, items: updated })
+                                  }}
+                                  className="w-full border border-slate-300 rounded px-2 py-1 font-mono uppercase text-xs"
+                                />
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={it.requiredQty}
+                                  onChange={(e) => {
+                                    const updated = [...pdfParsedData.items]
+                                    updated[idx].requiredQty = Number(e.target.value)
+                                    setPdfParsedData({ ...pdfParsedData, items: updated })
+                                  }}
+                                  className="w-20 border border-slate-300 rounded px-2 py-1 text-center font-bold text-xs"
+                                />
+                              </td>
+                              <td className="p-2 text-right">
+                                {pdfParsedData.items.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPdfParsedData({
+                                        ...pdfParsedData,
+                                        items: pdfParsedData.items.filter((_, i) => i !== idx)
+                                      })
+                                    }}
+                                    className="text-slate-400 hover:text-red-600 px-1"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => { setIsPdfModalOpen(false); setPdfParsedData(null); }}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-medium text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCommitPdfSO}
+                disabled={!pdfParsedData || pdfParsedData.items.length === 0}
+                className="px-5 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white rounded-lg font-bold text-xs shadow flex items-center space-x-1.5"
+              >
+                <FileCheck2 className="h-4 w-4" />
+                <span>Confirm & Proceed to Heat Allocation</span>
               </button>
             </div>
           </div>
