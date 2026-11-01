@@ -924,7 +924,7 @@ class DBService {
     customer_name?: string
     po_number: string
     required_delivery_date: string
-    items: { item_id?: string; item_code?: string; required_qty: number }[]
+    items: { item_id?: string; item_code?: string; item_description?: string; required_qty: number }[]
     po_document_name?: string
     po_document_url?: string
     userEmail: string
@@ -972,7 +972,7 @@ class DBService {
           itm = {
             id: 'ITEM-' + (this.items.length + 1).toString().padStart(3, '0'),
             item_code: item.item_code.trim().toUpperCase(),
-            item_description: `Oilfield Material ${item.item_code}`,
+            item_description: item.item_description?.trim() || `Oilfield Material ${item.item_code}`,
             material_grade: 'SS316/316L',
             specification: 'ASME B16.5',
             size: 'Standard',
@@ -982,6 +982,8 @@ class DBService {
             created_at: new Date().toISOString()
           }
           this.items.push(itm)
+        } else if (item.item_description && (!itm.item_description || itm.item_description.startsWith('Oilfield Material '))) {
+          itm.item_description = item.item_description.trim()
         }
       }
 
@@ -990,7 +992,7 @@ class DBService {
         sales_order_id: orderId,
         item_id: itm?.id || `ITEM-${idx + 1}`,
         item_code: itm?.item_code || item.item_code || 'GENERIC-ITEM',
-        item_description: itm?.item_description || '',
+        item_description: item.item_description?.trim() || itm?.item_description || '',
         required_qty: item.required_qty,
         allocated_qty: 0,
         dispatched_qty: 0,

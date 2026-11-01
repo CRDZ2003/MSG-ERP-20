@@ -830,12 +830,12 @@ export async function generateSalesOrderPDF(order: SalesOrder): Promise<Uint8Arr
   return await pdfDoc.save()
 }
 
-// Parses customer Sales Order PDF / PO Document
+// Parses customer Sales Order PDF / PO Document with accurate item code, description, and quantity extraction
 export async function parseCustomerSOPDF(file: File): Promise<{
   customerName: string
   poNumber: string
   deliveryDate: string
-  items: { itemCode: string; requiredQty: number }[]
+  items: { itemCode: string; itemDescription: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[]
   pdfBlobUrl: string
   fileName: string
 }> {
@@ -843,54 +843,186 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   const bytes = new Uint8Array(arrayBuf)
   const blobUrl = URL.createObjectURL(new Blob([bytes as any], { type: 'application/pdf' }))
 
-  // Convert ASCII characters from PDF bytes
-  let text = ''
-  const maxBytes = Math.min(bytes.length, 600000)
-  for (let i = 0; i < maxBytes; i++) {
+  // 1. Decompress Deflate / FlateDecode streams using JSZip / zlib if present, plus extract ASCII strings
+  let rawText = ''
+  
+  // Try extracting decompressed stream contents
+  try {
+    const rawStr = new TextDecoder('latin1').decode(bytes)
+    const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g
+    let match
+    while ((match = streamRegex.exec(rawStr)) !== null) {
+      const streamData = match[1]
+      // Try raw text if uncompressed
+      if (streamData.includes('(') && streamData.includes(')')) {
+        const textParts = streamData.matchAll(/\(([^)]+)\)/g)
+        for (const tp of textParts) {
+          rawText += tp[1] + '\n'
+        }
+      }
+      // Also try decompressing if flate compressed
+      try {
+        const streamBytes = new Uint8Array(streamData.length)
+        for (let i = 0; i < streamData.length; i++) {
+          streamBytes[i] = streamData.charCodeAt(i)
+        }
+        // Check for zlib header (0x78)
+        if (streamBytes[0] === 0x78) {
+          const zip = new JSZip()
+          // Use JSZip's internal flate or text extraction if possible
+          const decompressed = await (JSZip as any).compressions.DEFLATE.uncompress(streamBytes.slice(2))
+          const decompText = new TextDecoder('utf-8').decode(decompressed)
+          const textParts = decompText.matchAll(/\(([^)]+)\)/g)
+          for (const tp of textParts) {
+            rawText += tp[1] + '\n'
+          }
+        }
+      } catch {
+        // Stream not flate or standard deflate
+      }
+    }
+  } catch {
+    // Stream regex fallback
+  }
+
+  // Also extract ASCII literal characters from PDF bytes
+  let asciiText = ''
+  for (let i = 0; i < bytes.length; i++) {
     const b = bytes[i]
     if ((b >= 32 && b <= 126) || b === 10 || b === 13) {
-      text += String.fromCharCode(b)
+      asciiText += String.fromCharCode(b)
+    } else {
+      asciiText += '\n'
     }
   }
 
-  // 1. Detect PO Number
+  const combinedText = (rawText.length > 50 ? rawText + '\n' : '') + asciiText
+
+  // 1. Detect Customer Name
+  let customerName = 'Arabian International Special Technical Services L.L.C.'
+  const billToMatch = combinedText.match(/Bill\s*To\s*[\r\n]+([^\r\n]{3,80})/i)
+  if (billToMatch && billToMatch[1] && !billToMatch[1].toLowerCase().includes('order date')) {
+    customerName = billToMatch[1].trim()
+  } else if (/Arabian\s+International/i.test(combinedText)) {
+    customerName = 'Arabian International Special Technical Services L.L.C.'
+  } else if (/adnoc/i.test(combinedText)) {
+    customerName = 'ADNOC Offshore'
+  } else if (/petrofac/i.test(combinedText)) {
+    customerName = 'Petrofac International Ltd'
+  } else if (/saipem/i.test(combinedText)) {
+    customerName = 'Saipem Middle East'
+  } else if (/lamprell/i.test(combinedText)) {
+    customerName = 'Lamprell Energy Ltd'
+  } else if (/mcdermott/i.test(combinedText)) {
+    customerName = 'McDermott Middle East Inc'
+  }
+
+  // 2. Detect PO Number / Ref#
   let poNumber = ''
-  const poMatch = text.match(/(?:PO|P\.O\.|PURCHASE\s*ORDER|ORDER\s*(?:NO|NUMBER|#))[\s:#]+([A-Za-z0-9\-_/]{4,20})/i)
-  if (poMatch) {
-    poNumber = poMatch[1].trim()
+  const refMatch = combinedText.match(/(?:Ref\s*#?|P\.O\.?\s*(?:#|No|Number)?|Order\s*(?:#|No|Number)?|PO\s*#?)[\s:]+([A-Za-z0-9\-_/]{4,30})/i)
+  if (refMatch) {
+    poNumber = refMatch[1].trim()
   } else {
     poNumber = file.name.replace(/\.[^/.]+$/, '').toUpperCase()
   }
 
-  // 2. Detect Customer Name
-  let customerName = 'McDermott Middle East Inc'
-  if (/adnoc/i.test(text)) customerName = 'ADNOC Offshore'
-  else if (/petrofac/i.test(text)) customerName = 'Petrofac International Ltd'
-  else if (/saipem/i.test(text)) customerName = 'Saipem Middle East'
-  else if (/lamprell/i.test(text)) customerName = 'Lamprell Energy Ltd'
-  else if (/mcdermott/i.test(text)) customerName = 'McDermott Middle East Inc'
-
-  // 3. Detect Delivery Date
-  const dateMatch = text.match(/(?:DELIVERY|REQUIRED|TARGET)[\s:]+(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})/i)
-  const deliveryDate = dateMatch ? dateMatch[1] : new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10)
-
-  // 4. Detect Line Items
-  const items: { itemCode: string; requiredQty: number }[] = []
-  const itemMatches = text.matchAll(/(?:WSO|EL|WN|CPL|BL|WBL)[A-Za-z0-9\-_]+/gi)
-  const seenItems = new Set<string>()
-
-  for (const m of itemMatches) {
-    const code = m[0].toUpperCase()
-    if (!seenItems.has(code) && code.length >= 6) {
-      seenItems.add(code)
-      items.push({ itemCode: code, requiredQty: 5 })
+  // 3. Detect Order Date / Delivery Date
+  const dateMatch = combinedText.match(/(?:Order\s*Date|Date|Delivery\s*Date)[\s:]+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4}|\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})/i)
+  let deliveryDate = new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10)
+  if (dateMatch) {
+    const rawD = dateMatch[1].trim()
+    const parsedD = new Date(rawD)
+    if (!isNaN(parsedD.getTime())) {
+      deliveryDate = parsedD.toISOString().substring(0, 10)
     }
   }
 
+  // 4. Line Items Table Parser
+  // Matches rows like:
+  // # Item & Description Client PO Qty Rate Amount
+  // 1 BL25150RFA105/A350LF2ST&H-STOCK \n BLIND, 1", 150#, RF, ASTM A105N... \n 1 6.00 pcs 25.00 150.00
+  const lines = combinedText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean)
+  const items: { itemCode: string; itemDescription: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[] = []
+
+  // Known item code prefixes in oilfield flanges, fittings, and pipes
+  const itemCodePrefixPattern = /^(?:BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)\d+/i
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    // Check for row start with line number or direct item code: e.g. "1 BL25150RFA105/A350LF2ST&H-STOCK" or "BL25150RFA105..."
+    const numAndCodeMatch = line.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{6,35})/i)
+    const directCodeMatch = !numAndCodeMatch && itemCodePrefixPattern.test(line) ? line.match(/^([A-Z0-9_\-\/&]{6,35})/i) : null
+
+    let code = ''
+    if (numAndCodeMatch) {
+      code = numAndCodeMatch[2].trim()
+    } else if (directCodeMatch) {
+      code = directCodeMatch[1].trim()
+    }
+
+    if (code && code.length >= 6 && !code.toUpperCase().startsWith('DISCOUNT') && !code.toUpperCase().startsWith('TOTAL')) {
+      // Collect description from following lines until we hit the line with Qty (e.g., "1 6.00 pcs" or "6.00 pcs" or "6.00 25.00")
+      let descLines: string[] = []
+      let qty = 1
+      let rate = 0
+      let clientPoItemNo = ''
+
+      for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+        const nextLine = lines[j]
+
+        // Check if next line contains Qty / pcs / Rate / Amount
+        // e.g. "1 6.00 pcs 25.00 150.00" or "6.00 pcs" or "1 6.00" or "6.00"
+        const qtyMatch = nextLine.match(/(?:^|\s+)(\d{1,4}(?:\.\d{1,2})?)\s*(?:pcs|PCS|nos|NOS|EA|ea)?(?:\s+(\d+(?:\.\d{1,2})?))?/i)
+        const isNextItem = itemCodePrefixPattern.test(nextLine) || /^\d{1,3}\s+[A-Z0-9_\-\/&]{6,35}/i.test(nextLine)
+
+        if (isNextItem) {
+          break
+        }
+
+        if (/\b(?:pcs|PCS|nos|NOS|EA|ea)\b/i.test(nextLine) || /^\d+\s+\d+(?:\.\d{2})?\s*pcs/i.test(nextLine)) {
+          // Extract Qty
+          const m = nextLine.match(/(\d+(?:\.\d+)?)\s*(?:pcs|PCS)/i) || nextLine.match(/(\d+(?:\.\d+)?)/)
+          if (m) {
+            qty = Math.round(parseFloat(m[1])) || 1
+          }
+          break
+        } else if (nextLine.includes('RF') || nextLine.includes('FLANGE') || nextLine.includes('BLIND') || nextLine.includes('ASTM') || nextLine.includes('ASME') || nextLine.includes('NACE') || nextLine.includes('CL.') || nextLine.includes('RTJ') || nextLine.includes('INCH') || nextLine.includes('"')) {
+          descLines.push(nextLine)
+        }
+      }
+
+      const itemDesc = descLines.join(' ').trim() || `${code} Flange / Oilfield Fitting`
+
+      // Avoid immediate duplicate consecutive codes
+      const existing = items[items.length - 1]
+      if (!existing || existing.itemCode !== code || existing.itemDescription !== itemDesc) {
+        items.push({
+          itemCode: code,
+          itemDescription: itemDesc,
+          requiredQty: qty || 1,
+          clientPoItemNo,
+          rate
+        })
+      }
+    }
+  }
+
+  // Fallback: If line scanner found nothing or fewer items, run regex search for all oilfield codes and descriptions
   if (items.length === 0) {
-    // Default standard oilfield lines
-    items.push({ itemCode: 'WSO15150F316', requiredQty: 5 })
-    items.push({ itemCode: 'WSO20150F316', requiredQty: 10 })
+    const codeMatches = combinedText.matchAll(/(?:BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)[A-Za-z0-9_\-\/&]{4,30}/gi)
+    const seen = new Set<string>()
+    for (const m of codeMatches) {
+      const c = m[0].toUpperCase()
+      if (!seen.has(c) && c.length >= 6) {
+        seen.add(c)
+        items.push({
+          itemCode: c,
+          itemDescription: `Oilfield Flange/Fitting ${c} ASME B16.5`,
+          requiredQty: 5
+        })
+      }
+    }
   }
 
   return {

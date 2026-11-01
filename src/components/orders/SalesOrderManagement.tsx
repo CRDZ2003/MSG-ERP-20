@@ -75,7 +75,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
     customerName: string
     poNumber: string
     deliveryDate: string
-    items: { itemCode: string; requiredQty: number }[]
+    items: { itemCode: string; itemDescription?: string; requiredQty: number }[]
     pdfBlobUrl: string
     fileName: string
     file?: File
@@ -211,6 +211,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       required_delivery_date: pdfParsedData.deliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
       items: pdfParsedData.items.map(it => ({
         item_code: it.itemCode,
+        item_description: it.itemDescription,
         required_qty: it.requiredQty
       })),
       po_document_name: pdfParsedData.fileName,
@@ -977,14 +978,15 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">
                           <tr>
-                            <th className="p-2">Item Code</th>
-                            <th className="p-2 text-center w-24">Required Qty</th>
-                            <th className="p-2 text-right w-12">Action</th>
+                            <th className="p-2 w-44">Item Code</th>
+                            <th className="p-2">Description / Material Spec</th>
+                            <th className="p-2 text-center w-20">Qty (PCS)</th>
+                            <th className="p-2 text-right w-10">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {pdfParsedData.items.map((it, idx) => (
-                            <tr key={idx}>
+                            <tr key={idx} className="hover:bg-slate-50/50">
                               <td className="p-2">
                                 <input
                                   type="text"
@@ -994,7 +996,20 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                                     updated[idx].itemCode = e.target.value
                                     setPdfParsedData({ ...pdfParsedData, items: updated })
                                   }}
-                                  className="w-full border border-slate-300 rounded px-2 py-1 font-mono uppercase text-xs"
+                                  className="w-full border border-slate-300 rounded px-2 py-1 font-mono uppercase text-xs font-semibold text-slate-800"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="text"
+                                  placeholder={'e.g. BLIND, 1", 150#, RF, ASTM A105N...'}
+                                  value={it.itemDescription || ''}
+                                  onChange={(e) => {
+                                    const updated = [...pdfParsedData.items]
+                                    updated[idx].itemDescription = e.target.value
+                                    setPdfParsedData({ ...pdfParsedData, items: updated })
+                                  }}
+                                  className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-slate-700"
                                 />
                               </td>
                               <td className="p-2 text-center">
@@ -1007,7 +1022,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                                     updated[idx].requiredQty = Number(e.target.value)
                                     setPdfParsedData({ ...pdfParsedData, items: updated })
                                   }}
-                                  className="w-20 border border-slate-300 rounded px-2 py-1 text-center font-bold text-xs"
+                                  className="w-16 border border-slate-300 rounded px-1.5 py-1 text-center font-bold text-xs"
                                 />
                               </td>
                               <td className="p-2 text-right">
@@ -1020,7 +1035,8 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                                         items: pdfParsedData.items.filter((_, i) => i !== idx)
                                       })
                                     }}
-                                    className="text-slate-400 hover:text-red-600 px-1"
+                                    className="text-slate-400 hover:text-red-600 px-1 font-bold"
+                                    title="Remove item"
                                   >
                                     ✕
                                   </button>
