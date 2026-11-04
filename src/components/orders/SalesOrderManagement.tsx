@@ -77,7 +77,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
     customerName: string
     poNumber: string
     deliveryDate: string
-    items: { itemCode: string; itemDescription?: string; heatNumber?: string; location?: string; requiredQty: number }[]
+    items: { itemCode: string; itemDescription?: string; heatNumber?: string; location?: string; requiredQty: number; purchaseType?: 'regular' | 'local_purchase' }[]
     pdfBlobUrl: string
     fileName: string
     file?: File
@@ -1062,6 +1062,15 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                                   }}
                                   className="w-full border border-slate-300 rounded px-2 py-1 font-mono uppercase text-xs font-semibold text-slate-800"
                                 />
+                                {it.purchaseType === 'local_purchase' || /^L[-_0-9]/i.test(it.itemCode) ? (
+                                  <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                    Local Purchase (L-Code)
+                                  </span>
+                                ) : (
+                                  <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    Warehouse Stock
+                                  </span>
+                                )}
                               </td>
                               <td className="p-2">
                                 <input

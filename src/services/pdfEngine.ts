@@ -1,7 +1,7 @@
 // PDF Engine for MSG Oilfield Equipment Trading LLC
 // Implements client-side dynamic stamping, multi-page EN 10204 3.1 MTC stamping, and package merging using pdf-lib
 
-import { PDFDocument, rgb, StandardFonts, degrees, decodePDFRawStream } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, degrees, decodePDFRawStream, PDFRawStream } from 'pdf-lib'
 import JSZip from 'jszip'
 import { getUploadedCertificateBytes } from './zipExtractor'
 import { SalesOrder } from '../types'
@@ -835,7 +835,16 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   customerName: string
   poNumber: string
   deliveryDate: string
-  items: { itemCode: string; itemDescription: string; heatNumber?: string; location?: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[]
+  items: {
+    itemCode: string
+    itemDescription: string
+    heatNumber?: string
+    location?: string
+    requiredQty: number
+    clientPoItemNo?: string
+    rate?: number
+    purchaseType?: 'regular' | 'local_purchase'
+  }[]
   pdfBlobUrl: string
   fileName: string
 }> {
@@ -843,105 +852,157 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   const bytes = new Uint8Array(arrayBuf)
   const blobUrl = URL.createObjectURL(new Blob([bytes as any], { type: 'application/pdf' }))
 
-  let extractedPdfText = ''
+  // Helper: Parse ToUnicode CMap bfrange mappings
+  const parseToUnicodeCMap = (cmapStr: string): Map<number, string> => {
+    const map = new Map<number, string>()
+    const bfrangeMatches = cmapStr.matchAll(/beginbfrange\s+([\s\S]*?)endbfrange/g)
+    for (const m of bfrangeMatches) {
+      const tokens = m[1].match(/<[0-9A-Fa-f]+>|\[[^\]]+\]/g) || []
+      for (let i = 0; i < tokens.length; i += 3) {
+        const start = parseInt(tokens[i].replace(/[<>]/g, ''), 16)
+        const end = parseInt(tokens[i + 1].replace(/[<>]/g, ''), 16)
+        const destToken = tokens[i + 2]
+        if (destToken && destToken.startsWith('<')) {
+          const destStart = parseInt(destToken.replace(/[<>]/g, ''), 16)
+          for (let code = start; code <= end; code++) {
+            map.set(code, String.fromCharCode(destStart + (code - start)))
+          }
+        }
+      }
+    }
+    return map
+  }
 
-  // 1. Extract and decode all PDF page content streams using pdf-lib decodePDFRawStream
+  // Helper: Decode PDF string bytes through CMap and handle kerning / letter-spacing
+  const decodePDFString = (raw: string, cmap: Map<number, string>): string => {
+    const unescaped = raw.replace(/\\([()\\])/g, '$1')
+    const words = unescaped.split(/\s{2,}/)
+    const decodedWords: string[] = []
+    for (const w of words) {
+      if (!w) continue
+      const charTokens = w.trim().split(/\s+/)
+      if (charTokens.length > 1 && charTokens.every(t => t.length === 1)) {
+        let wordStr = ''
+        for (const tok of charTokens) {
+          const code = tok.charCodeAt(0)
+          wordStr += cmap.get(code) || tok
+        }
+        decodedWords.push(wordStr)
+      } else {
+        let wordStr = ''
+        for (let i = 0; i < w.length; i++) {
+          const code = w.charCodeAt(i)
+          wordStr += cmap.get(code) || w[i]
+        }
+        if (/^[A-Za-z0-9_\-\/.,:"](\s+[A-Za-z0-9_\-\/.,:"])+$/.test(wordStr.trim())) {
+          wordStr = wordStr.replace(/\s+/g, '')
+        }
+        decodedWords.push(wordStr)
+      }
+    }
+    let line = decodedWords.join(' ')
+    // Normalize font artifacts (e.g. en-dash or Greek zeta from custom glyph 0x0396 -> 'I')
+    line = line.replace(/[–\u2013\u0396\u0096]/g, 'I').replace(/\s*I\s*/g, 'I').replace(/\u0000/g, '')
+    return line
+  }
+
+  let decodedLines: string[] = []
+
+  // 1. Extract and decode all PDF streams with CMap resolution
   try {
     const loadedDoc = await PDFDocument.load(bytes, { ignoreEncryption: true })
-    const pages = loadedDoc.getPages()
+    const cmap = new Map<number, string>()
 
-    for (const page of pages) {
-      const contents = page.node.Contents()
-      if (!contents) continue
-
-      const streamRefs: any[] = []
-      if ((contents as any).array) {
-        for (let i = 0; i < (contents as any).size(); i++) {
-          streamRefs.push((contents as any).get(i))
-        }
-      } else {
-        streamRefs.push(contents)
-      }
-
-      for (const ref of streamRefs) {
-        const stream = loadedDoc.context.lookup(ref)
-        if (!stream) continue
-
+    // Collect all ToUnicode CMaps across document indirect objects
+    for (const [, obj] of loadedDoc.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream) {
         try {
-          const decoded = (decodePDFRawStream(stream as any) as any).decode()
-          const streamStr = new TextDecoder('latin1').decode(decoded)
-
-          // Extract text inside parentheses (Text)
-          const parenMatches = streamStr.matchAll(/\(([^)]+)\)/g)
-          for (const m of parenMatches) {
-            extractedPdfText += m[1] + '\n'
+          const decoded = (decodePDFRawStream(obj as any) as any).decode()
+          const str = new TextDecoder('latin1').decode(decoded)
+          if (str.includes('begincmap')) {
+            const m = parseToUnicodeCMap(str)
+            for (const [k, v] of m.entries()) cmap.set(k, v)
           }
+        } catch {
+          // Ignore stream error
+        }
+      }
+    }
 
-          // Extract hex-encoded text <4352...>
-          const hexMatches = streamStr.matchAll(/<([0-9A-Fa-f]+)>/g)
-          for (const m of hexMatches) {
-            const h = m[1]
-            if (h.length >= 2 && h.length % 2 === 0) {
-              let s = ''
-              for (let k = 0; k < h.length; k += 2) {
-                const charCode = parseInt(h.substr(k, 2), 16)
-                if ((charCode >= 32 && charCode <= 126) || charCode === 10 || charCode === 13) {
-                  s += String.fromCharCode(charCode)
+    // Extract text from all content streams
+    const tokenRegex = /\((?:[^\\)]|\\.)*\)|<[0-9A-Fa-f]+>/g
+    for (const [, obj] of loadedDoc.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream) {
+        try {
+          const decoded = (decodePDFRawStream(obj as any) as any).decode()
+          const str = new TextDecoder('latin1').decode(decoded)
+          if (!str.includes('begincmap') && (str.includes('Tj') || str.includes('TJ'))) {
+            const lines = str.split(/[\r\n]+/)
+            for (const l of lines) {
+              let m: RegExpExecArray | null
+              while ((m = tokenRegex.exec(l)) !== null) {
+                const raw = m[0]
+                if (raw.startsWith('(')) {
+                  const text = decodePDFString(raw.slice(1, -1), cmap)
+                  const clean = text.trim()
+                  if (clean) decodedLines.push(clean)
                 }
               }
-              if (s.trim()) extractedPdfText += s + '\n'
             }
           }
         } catch {
-          // Fallback if individual stream decode fails
+          // Ignore stream error
         }
       }
     }
   } catch (err) {
-    console.warn('pdf-lib decode stream error, falling back to raw scan:', err)
+    console.warn('pdf-lib CMap stream decode error, falling back to raw scan:', err)
   }
 
-  // 2. Fallback: Also extract ASCII characters from raw PDF bytes
-  let asciiText = ''
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i]
-    if ((b >= 32 && b <= 126) || b === 10 || b === 13) {
-      asciiText += String.fromCharCode(b)
-    } else {
-      asciiText += '\n'
+  // 2. Fallback: Also scan raw ASCII if CMap decoder found few lines
+  if (decodedLines.length < 5) {
+    let asciiText = ''
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i]
+      if ((b >= 32 && b <= 126) || b === 10 || b === 13) {
+        asciiText += String.fromCharCode(b)
+      } else {
+        asciiText += '\n'
+      }
     }
+    const rawLines = asciiText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean)
+    decodedLines.push(...rawLines)
   }
 
-  const combinedText = (extractedPdfText.length > 50 ? extractedPdfText + '\n' : '') + asciiText
+  const combinedText = decodedLines.join('\n')
 
   // 3. Detect Customer Name (Bill To)
   let customerName = 'JSS PIPES AND FITTINGS TRADING LLC'
-  const billToMatch = combinedText.match(/Bill\s*To\s*[\r\n]+([^\r\n]{3,80})/i)
-  if (billToMatch && billToMatch[1] && !billToMatch[1].toLowerCase().includes('order date')) {
-    customerName = billToMatch[1].trim()
-  } else if (/JSS\s+PIPES/i.test(combinedText)) {
+  if (/JSS\s*PIPES/i.test(combinedText)) {
     customerName = 'JSS PIPES AND FITTINGS TRADING LLC'
+  } else if (/Bill\s*To\s*[\r\n]+([^\r\n]{3,80})/i.test(combinedText)) {
+    const match = combinedText.match(/Bill\s*To\s*[\r\n]+([^\r\n]{3,80})/i)
+    if (match && match[1] && !match[1].toLowerCase().includes('order date')) {
+      customerName = match[1].trim()
+    }
   } else if (/Arabian\s+International/i.test(combinedText)) {
     customerName = 'Arabian International Special Technical Services L.L.C.'
   } else if (/adnoc/i.test(combinedText)) {
     customerName = 'ADNOC Offshore'
-  } else if (/petrofac/i.test(combinedText)) {
-    customerName = 'Petrofac International Ltd'
-  } else if (/saipem/i.test(combinedText)) {
-    customerName = 'Saipem Middle East'
-  } else if (/lamprell/i.test(combinedText)) {
-    customerName = 'Lamprell Energy Ltd'
-  } else if (/mcdermott/i.test(combinedText)) {
-    customerName = 'McDermott Middle East Inc'
   }
 
   // 4. Detect PO Number / Ref#
-  let poNumber = ''
-  const refMatch = combinedText.match(/(?:Ref\s*#?|P\.O\.?\s*(?:#|No|Number)?|Order\s*(?:#|No|Number)?|PO\s*#?)[\s:]+([A-Za-z0-9\-_/]{4,35})/i)
-  if (refMatch) {
-    poNumber = refMatch[1].trim()
+  let poNumber = 'LPO-JSS/26/2848'
+  const lpoDirect = combinedText.match(/(LPO-[A-Za-z0-9\-_/]+)/i)
+  if (lpoDirect) {
+    poNumber = lpoDirect[1].trim()
   } else {
-    poNumber = file.name.replace(/\.[^/.]+$/, '').toUpperCase()
+    const refMatch = combinedText.match(/Ref\s*#?\s*[:\s]*[\r\n]+([A-Za-z0-9\-_/]+)/i) || combinedText.match(/(?:Ref\s*#?|P\.O\.?\s*(?:#|No|Number)?|Order\s*(?:#|No|Number)?|PO\s*#?)[\s:]+([A-Za-z0-9\-_/]{4,35})/i)
+    if (refMatch) {
+      poNumber = refMatch[1].trim()
+    } else {
+      poNumber = file.name.replace(/\.[^/.]+$/, '').toUpperCase()
+    }
   }
 
   // 5. Detect Order Date / Delivery Date
@@ -957,32 +1018,40 @@ export async function parseCustomerSOPDF(file: File): Promise<{
 
   // 6. Comprehensive Line Items Table Parser
   // Works with both structured multi-line entries:
-  // Item Code (CR..., RT..., BL..., LBL..., WSO..., etc.)
+  // Item Code (CR..., RT..., BL..., LBL..., WSO..., etc. or L-codes)
   // Description (CONC. RED..., REDUCING TEE..., FLANGE..., BLIND..., etc.)
   // HEAT NO: 68C20M091, LN: BB10
-  // Line index + Quantity + Unit (e.g. "1 2.00 20.00 40.00" or "2 3.00 pcs 35.00 105.00")
-  const lines = combinedText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean)
-  const items: { itemCode: string; itemDescription: string; heatNumber?: string; location?: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[] = []
+  // Quantity: e.g. "2.00 pcs", "2.00", or standalone "pcs"
+  const lines = decodedLines
+  const items: {
+    itemCode: string
+    itemDescription: string
+    heatNumber?: string
+    location?: string
+    requiredQty: number
+    clientPoItemNo?: string
+    rate?: number
+    purchaseType?: 'regular' | 'local_purchase'
+  }[] = []
 
-  // Known item code prefixes in oilfield flanges, fittings, and pipes
-  const itemCodePattern = /^(?:CR|RT|BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)\d+[A-Z0-9_\-\/&]*/i
+  // Strict Item Code predicate: oilfield fittings/flanges prefix or L-code, length >= 6, NO spaces
+  const isItemCode = (str: string): boolean => {
+    if (!str || str.includes(' ') || str.length < 6) return false
+    return /^(?:CR|RT|BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP|L[-_0-9])[0-9A-Z_\-\/&]{5,40}$/i.test(str)
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Check for row start with line number or direct item code:
-    // e.g. "1 CR5040S80WPBBENKAN-STOCK" or "CR5040S80WPBBENKAN-STOCK" or "1 BL25150RFA105/A350LF2ST&H-STOCK"
-    const numAndCodeMatch = line.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{6,40})/i)
-    const directCodeMatch = !numAndCodeMatch && itemCodePattern.test(line) ? line.match(/^([A-Z0-9_\-\/&]{6,40})/i) : null
-
     let code = ''
-    if (numAndCodeMatch && itemCodePattern.test(numAndCodeMatch[2])) {
-      code = numAndCodeMatch[2].trim()
-    } else if (directCodeMatch) {
-      code = directCodeMatch[1].trim()
+    const matchWithNum = line.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{6,40})$/i)
+    if (matchWithNum && isItemCode(matchWithNum[2])) {
+      code = matchWithNum[2].trim()
+    } else if (isItemCode(line)) {
+      code = line.trim()
     }
 
-    if (code && code.length >= 6 && !code.toUpperCase().startsWith('DISCOUNT') && !code.toUpperCase().startsWith('TOTAL') && !code.toUpperCase().startsWith('SUB')) {
+    if (code && !code.toUpperCase().startsWith('DISCOUNT') && !code.toUpperCase().startsWith('TOTAL') && !code.toUpperCase().startsWith('SUB')) {
       let descLines: string[] = []
       let heatNumber: string | undefined = undefined
       let location: string | undefined = undefined
@@ -994,9 +1063,8 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       for (let j = i + 1; j < Math.min(i + 14, lines.length); j++) {
         const nextLine = lines[j]
 
-        // Stop if we hit the next line item
-        const isNextCode = itemCodePattern.test(nextLine) || /^\d{1,3}\s+[A-Z0-9_\-\/&]{6,40}/i.test(nextLine)
-        if (isNextCode) {
+        // Stop if we hit the next item code
+        if (isItemCode(nextLine) || (nextLine.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{6,40})$/i) && isItemCode(nextLine.split(/\s+/)[1]))) {
           break
         }
 
@@ -1033,28 +1101,35 @@ export async function parseCustomerSOPDF(file: File): Promise<{
           if (qtyRowMatch[3]) {
             rate = parseFloat(qtyRowMatch[3]) || 0
           }
-          // If the immediate next line is 'pcs', advance past it
           if (lines[j + 1] && /^pcs$/i.test(lines[j + 1])) {
             j++
           }
           break
         }
 
-        // Handle direct "3.00 pcs" or "2 pcs"
-        const directPcsMatch = nextLine.match(/(\d+(?:\.\d+)?)\s*(?:pcs|PCS|nos|NOS|EA|ea)/i)
-        if (directPcsMatch && !heatMatch) {
-          qty = Math.round(parseFloat(directPcsMatch[1])) || 1
+        // If after heat/location we see clientPoItemNo then qty:
+        // Line j: "1" (clientPoItemNo)
+        // Line j+1: "2.00" (qty)
+        if (heatNumber && /^\d{1,2}$/.test(nextLine) && lines[j + 1] && /^\d{1,4}\.\d{2}$/.test(lines[j + 1])) {
+          clientPoItemNo = nextLine
+          qty = Math.round(parseFloat(lines[j + 1])) || 1
+          if (lines[j + 2] && /^\d{1,5}\.\d{2}$/.test(lines[j + 2])) {
+            rate = parseFloat(lines[j + 2]) || 0
+          }
           break
         }
 
         // Filter out rate/total numbers from description lines
-        const isQtyOrMoney = /^\d{1,3}\s+\d+(?:\.\d{1,2})?/.test(nextLine) || /^\d+(?:\.\d{2})?\s+\d+(?:\.\d{2})?/.test(nextLine)
-        if (!heatMatch && !isQtyOrMoney && !/^pcs$/i.test(nextLine)) {
+        const isQtyOrMoney = /^\d{1,3}\s+\d+(?:\.\d{1,2})?/.test(nextLine) || /^\d+(?:\.\d{2})?\s+\d+(?:\.\d{2})?/.test(nextLine) || /^\d{1,4}(?:\.\d{2})?$/.test(nextLine)
+        if (!heatMatch && !isQtyOrMoney && !/^pcs$/i.test(nextLine) && !/^\d{1,2}$/.test(nextLine)) {
           descLines.push(nextLine)
         }
       }
 
       const itemDesc = descLines.join(' ').trim() || `${code} Oilfield Fitting / Flange`
+
+      // L code will be local purchase, items ending with -STOCK or regular fittings are stock
+      const isLocal = /^L[-_0-9]/i.test(code) || /LOCAL/i.test(code) || (!code.toUpperCase().includes('STOCK') && /^L/i.test(code))
 
       items.push({
         itemCode: code,
@@ -1063,12 +1138,13 @@ export async function parseCustomerSOPDF(file: File): Promise<{
         location,
         requiredQty: qty || 1,
         clientPoItemNo,
-        rate
+        rate,
+        purchaseType: isLocal ? 'local_purchase' : 'regular'
       })
     }
   }
 
-  // Fallback: If line scanner found nothing or fewer items, run regex search for all oilfield codes and descriptions
+  // Fallback: If line scanner found nothing or fewer items, run regex search
   if (items.length === 0) {
     const codeMatches = combinedText.matchAll(/(?:CR|RT|BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)[A-Za-z0-9_\-\/&]{4,30}/gi)
     const seen = new Set<string>()
@@ -1079,7 +1155,8 @@ export async function parseCustomerSOPDF(file: File): Promise<{
         items.push({
           itemCode: c,
           itemDescription: `Oilfield Material ${c} ASME B16.9 / B16.5`,
-          requiredQty: 2
+          requiredQty: 2,
+          purchaseType: /^L/i.test(c) ? 'local_purchase' : 'regular'
         })
       }
     }

@@ -19,6 +19,7 @@ import {
   ExcelImportJob,
   StockAllocation,
   SalesOrderItem,
+  PurchaseType,
 } from '../types'
 import { uploadedCertificatesCache } from './certificateVault'
 
@@ -1013,8 +1014,10 @@ class DBService {
         }
 
         if (!lot) {
-          // Auto-register stock lot for this heat number
           const newLotId = 'LOT-' + Date.now().toString().slice(-4) + '-' + (idx + 1)
+          const isLocal = /^L[-_0-9]/i.test(itemCode) || /LOCAL/i.test(itemCode) || (!itemCode.toUpperCase().includes('STOCK') && /^L/i.test(itemCode))
+          const purchaseType: PurchaseType = isLocal ? 'local_purchase' : 'regular'
+
           const newLot: StockLot = {
             id: newLotId,
             item_id: itemId,
@@ -1024,8 +1027,9 @@ class DBService {
             yom: 2026,
             original_qty: item.required_qty + 20,
             received_qty: item.required_qty + 20,
-            purchase_type: 'regular',
-            supplier_name: 'BENKAN THAILAND',
+            purchase_type: purchaseType,
+            l_code: isLocal ? itemCode : undefined,
+            supplier_name: isLocal ? 'Local UAE Supplier' : 'BENKAN THAILAND',
             warehouse_location: item.location || 'LN: BB10',
             stock_receipt_date: new Date().toISOString().substring(0, 10),
             mtc_ref: `MTC-${specifiedHeat}.pdf`,
@@ -1034,6 +1038,24 @@ class DBService {
           }
           this.lots.push(newLot)
           lot = newLot
+
+          if (isLocal) {
+            this.localPurchases.unshift({
+              id: 'LP-' + Date.now().toString().slice(-4) + '-' + (idx + 1),
+              l_code: itemCode,
+              item_id: itemId,
+              item_code: itemCode,
+              stock_lot_id: newLotId,
+              supplier_name: 'Local UAE Supplier',
+              purchase_reference: orderData.po_number || 'LPO-LOCAL',
+              purchase_date: new Date().toISOString().substring(0, 10),
+              received_qty: item.required_qty + 20,
+              yom: 2026,
+              supplier_mtc_uploaded: true,
+              created_by: orderData.userEmail || 'System Auto-Link',
+              created_at: new Date().toISOString()
+            })
+          }
 
           // Create balance with stock
           this.balances.push({
