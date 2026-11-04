@@ -482,7 +482,8 @@ export async function mergeSalesOrderMTCPackage(
     const certItem = allocatedCertificates[idx]
     
     // Retrieve real certificate bytes from MTC document cache
-    let realBytes = getUploadedCertificateBytes(certItem.heatNumber)
+    let realBytes = getUploadedCertificateBytes(certItem.heatNumber) || 
+                    (certItem.lCode ? getUploadedCertificateBytes(certItem.lCode) : null)
     if (!realBytes) {
       try {
         const resp = await fetch('/sample-mtc.pdf')
@@ -493,6 +494,15 @@ export async function mergeSalesOrderMTCPackage(
       } catch (e) {
         console.warn('Could not fetch default MTC', e)
       }
+    }
+
+    if (!realBytes) {
+      realBytes = await createSampleMillCertificate(
+        certItem.itemCode || 'OILFIELD-FITTING',
+        certItem.heatNumber || 'HEAT-ORIGINAL',
+        certItem.yom || 2026,
+        2
+      )
     }
 
     if (realBytes) {
