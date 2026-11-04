@@ -91,6 +91,8 @@ export interface SalesOrderItem {
   item_id: string
   item_code: string
   item_description: string
+  heat_number?: string
+  location?: string
   required_qty: number
   allocated_qty: number
   dispatched_qty: number
@@ -104,6 +106,7 @@ export interface StockAllocation {
   sales_order_id: string
   stock_lot_id: string
   heat_number: string
+  mtc_certificate_id?: string
   allocated_qty: number
   released_qty: number
   dispatched_qty: number

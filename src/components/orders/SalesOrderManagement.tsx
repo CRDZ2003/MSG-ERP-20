@@ -28,10 +28,12 @@ import {
   ShoppingCart,
   FileText,
   Eye,
+  Layers,
 } from 'lucide-react'
 import {
   generateSalesOrderPDF,
   parseCustomerSOPDF,
+  mergeSalesOrderMTCPackage,
   downloadPDFBlob,
 } from '../../services/pdfEngine'
 
@@ -75,12 +77,13 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
     customerName: string
     poNumber: string
     deliveryDate: string
-    items: { itemCode: string; itemDescription?: string; requiredQty: number }[]
+    items: { itemCode: string; itemDescription?: string; heatNumber?: string; location?: string; requiredQty: number }[]
     pdfBlobUrl: string
     fileName: string
     file?: File
   } | null>(null)
   const [generatingPdfSoId, setGeneratingPdfSoId] = useState<string | null>(null)
+  const [generatingMtcSoId, setGeneratingMtcSoId] = useState<string | null>(null)
 
   const orders = db.getOrders()
   const customers = db.getCustomers()
@@ -212,6 +215,8 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       items: pdfParsedData.items.map(it => ({
         item_code: it.itemCode,
         item_description: it.itemDescription,
+        heat_number: it.heatNumber,
+        location: it.location,
         required_qty: it.requiredQty
       })),
       po_document_name: pdfParsedData.fileName,
@@ -239,6 +244,51 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       alert('Failed to generate Sales Order PDF: ' + err.message)
     } finally {
       setGeneratingPdfSoId(null)
+    }
+  }
+
+  // Generate & download Certified MTC Package directly from Sales Order
+  const handleGenerateMTCPackage = async (order: SalesOrder) => {
+    if (order.allocations.length === 0) {
+      alert('Please allocate stock lots / heat numbers before generating the MTC package.')
+      return
+    }
+
+    setGeneratingMtcSoId(order.id)
+    try {
+      const masterStock = db.getMasterStockView()
+      const allocatedCerts = order.allocations.map(alloc => {
+        const lot = masterStock.find(s => s.id === alloc.stock_lot_id)
+        return {
+          itemCode: lot?.item_code || '',
+          heatNumber: alloc.heat_number,
+          yom: lot?.yom || 2026,
+          lCode: lot?.l_code,
+          qty: alloc.allocated_qty,
+          isLocal: lot?.purchase_type === 'local_purchase',
+          pages: 2,
+        }
+      })
+
+      const pdfBytes = await mergeSalesOrderMTCPackage(
+        order.so_number,
+        order.customer_name,
+        order.po_number,
+        allocatedCerts
+      )
+
+      downloadPDFBlob(pdfBytes, `${order.so_number}_CERTIFIED_MTC_PACKAGE.pdf`)
+
+      db.markMTCPackageGenerated(
+        order.id,
+        `${order.so_number}_CERTIFIED_MTC_PACKAGE.pdf`,
+        currentUser?.email || 'sales@msgoilfield.ae'
+      )
+      alert(`MTC Package for ${order.so_number} generated and certified successfully!`)
+    } catch (err: any) {
+      alert('Error generating MTC Package: ' + err.message)
+    } finally {
+      setGeneratingMtcSoId(null)
     }
   }
 
@@ -499,7 +549,20 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                     )}
 
                     {/* Action buttons */}
-                    {canAllocate && (
+                    {/* Direct MTC Package Release for Allocated Orders */}
+                    {(order.status === 'Stock Allocated' || order.status === 'Approved' || order.status === 'MTC Generated') && order.allocations.length > 0 && (
+                      <button
+                        onClick={() => handleGenerateMTCPackage(order)}
+                        disabled={generatingMtcSoId === order.id}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center space-x-1 shadow transition-colors"
+                        title="Compile and download Certified EN 10204 3.1 MTC package for all allocated heats"
+                      >
+                        <Layers className="h-3.5 w-3.5" />
+                        <span>{generatingMtcSoId === order.id ? 'Certifying...' : 'Download MTC Pkg'}</span>
+                      </button>
+                    )}
+
+                    {canAllocate && order.status === 'Draft' && (
                       <button
                         onClick={() => onNavigateToAllocation(order.id)}
                         className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center space-x-1 shadow"
@@ -978,9 +1041,10 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">
                           <tr>
-                            <th className="p-2 w-44">Item Code</th>
+                            <th className="p-2 w-40">Item Code</th>
                             <th className="p-2">Description / Material Spec</th>
-                            <th className="p-2 text-center w-20">Qty (PCS)</th>
+                            <th className="p-2 w-32">Heat No & Location</th>
+                            <th className="p-2 text-center w-16">Qty</th>
                             <th className="p-2 text-right w-10">Action</th>
                           </tr>
                         </thead>
@@ -1002,7 +1066,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                               <td className="p-2">
                                 <input
                                   type="text"
-                                  placeholder={'e.g. BLIND, 1", 150#, RF, ASTM A105N...'}
+                                  placeholder={'e.g. CONC. RED. 2" X 1.1/2", SCH.80...'}
                                   value={it.itemDescription || ''}
                                   onChange={(e) => {
                                     const updated = [...pdfParsedData.items]
@@ -1011,6 +1075,27 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                                   }}
                                   className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-slate-700"
                                 />
+                              </td>
+                              <td className="p-2">
+                                <div className="space-y-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Heat No"
+                                    value={it.heatNumber || ''}
+                                    onChange={(e) => {
+                                      const updated = [...pdfParsedData.items]
+                                      updated[idx].heatNumber = e.target.value
+                                      setPdfParsedData({ ...pdfParsedData, items: updated })
+                                    }}
+                                    className="w-full border border-slate-300 rounded px-1.5 py-0.5 font-mono text-[11px] font-bold text-red-700 bg-red-50/50"
+                                    title="Heat Number for MTC Certificate Allocation"
+                                  />
+                                  {it.location && (
+                                    <span className="text-[10px] text-slate-500 font-mono block">
+                                      Loc: {it.location}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="p-2 text-center">
                                 <input

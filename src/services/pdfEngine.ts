@@ -1,7 +1,7 @@
 // PDF Engine for MSG Oilfield Equipment Trading LLC
 // Implements client-side dynamic stamping, multi-page EN 10204 3.1 MTC stamping, and package merging using pdf-lib
 
-import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, degrees, decodePDFRawStream } from 'pdf-lib'
 import JSZip from 'jszip'
 import { getUploadedCertificateBytes } from './zipExtractor'
 import { SalesOrder } from '../types'
@@ -830,12 +830,12 @@ export async function generateSalesOrderPDF(order: SalesOrder): Promise<Uint8Arr
   return await pdfDoc.save()
 }
 
-// Parses customer Sales Order PDF / PO Document with accurate item code, description, and quantity extraction
+// Parses customer Sales Order PDF / PO Document with accurate item code, description, heat number, and quantity extraction
 export async function parseCustomerSOPDF(file: File): Promise<{
   customerName: string
   poNumber: string
   deliveryDate: string
-  items: { itemCode: string; itemDescription: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[]
+  items: { itemCode: string; itemDescription: string; heatNumber?: string; location?: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[]
   pdfBlobUrl: string
   fileName: string
 }> {
@@ -843,49 +843,65 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   const bytes = new Uint8Array(arrayBuf)
   const blobUrl = URL.createObjectURL(new Blob([bytes as any], { type: 'application/pdf' }))
 
-  // 1. Decompress Deflate / FlateDecode streams using JSZip / zlib if present, plus extract ASCII strings
-  let rawText = ''
-  
-  // Try extracting decompressed stream contents
+  let extractedPdfText = ''
+
+  // 1. Extract and decode all PDF page content streams using pdf-lib decodePDFRawStream
   try {
-    const rawStr = new TextDecoder('latin1').decode(bytes)
-    const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g
-    let match
-    while ((match = streamRegex.exec(rawStr)) !== null) {
-      const streamData = match[1]
-      // Try raw text if uncompressed
-      if (streamData.includes('(') && streamData.includes(')')) {
-        const textParts = streamData.matchAll(/\(([^)]+)\)/g)
-        for (const tp of textParts) {
-          rawText += tp[1] + '\n'
+    const loadedDoc = await PDFDocument.load(bytes, { ignoreEncryption: true })
+    const pages = loadedDoc.getPages()
+
+    for (const page of pages) {
+      const contents = page.node.Contents()
+      if (!contents) continue
+
+      const streamRefs: any[] = []
+      if ((contents as any).array) {
+        for (let i = 0; i < (contents as any).size(); i++) {
+          streamRefs.push((contents as any).get(i))
         }
+      } else {
+        streamRefs.push(contents)
       }
-      // Also try decompressing if flate compressed
-      try {
-        const streamBytes = new Uint8Array(streamData.length)
-        for (let i = 0; i < streamData.length; i++) {
-          streamBytes[i] = streamData.charCodeAt(i)
-        }
-        // Check for zlib header (0x78)
-        if (streamBytes[0] === 0x78) {
-          const zip = new JSZip()
-          // Use JSZip's internal flate or text extraction if possible
-          const decompressed = await (JSZip as any).compressions.DEFLATE.uncompress(streamBytes.slice(2))
-          const decompText = new TextDecoder('utf-8').decode(decompressed)
-          const textParts = decompText.matchAll(/\(([^)]+)\)/g)
-          for (const tp of textParts) {
-            rawText += tp[1] + '\n'
+
+      for (const ref of streamRefs) {
+        const stream = loadedDoc.context.lookup(ref)
+        if (!stream) continue
+
+        try {
+          const decoded = (decodePDFRawStream(stream as any) as any).decode()
+          const streamStr = new TextDecoder('latin1').decode(decoded)
+
+          // Extract text inside parentheses (Text)
+          const parenMatches = streamStr.matchAll(/\(([^)]+)\)/g)
+          for (const m of parenMatches) {
+            extractedPdfText += m[1] + '\n'
           }
+
+          // Extract hex-encoded text <4352...>
+          const hexMatches = streamStr.matchAll(/<([0-9A-Fa-f]+)>/g)
+          for (const m of hexMatches) {
+            const h = m[1]
+            if (h.length >= 2 && h.length % 2 === 0) {
+              let s = ''
+              for (let k = 0; k < h.length; k += 2) {
+                const charCode = parseInt(h.substr(k, 2), 16)
+                if ((charCode >= 32 && charCode <= 126) || charCode === 10 || charCode === 13) {
+                  s += String.fromCharCode(charCode)
+                }
+              }
+              if (s.trim()) extractedPdfText += s + '\n'
+            }
+          }
+        } catch {
+          // Fallback if individual stream decode fails
         }
-      } catch {
-        // Stream not flate or standard deflate
       }
     }
-  } catch {
-    // Stream regex fallback
+  } catch (err) {
+    console.warn('pdf-lib decode stream error, falling back to raw scan:', err)
   }
 
-  // Also extract ASCII literal characters from PDF bytes
+  // 2. Fallback: Also extract ASCII characters from raw PDF bytes
   let asciiText = ''
   for (let i = 0; i < bytes.length; i++) {
     const b = bytes[i]
@@ -896,13 +912,15 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     }
   }
 
-  const combinedText = (rawText.length > 50 ? rawText + '\n' : '') + asciiText
+  const combinedText = (extractedPdfText.length > 50 ? extractedPdfText + '\n' : '') + asciiText
 
-  // 1. Detect Customer Name
-  let customerName = 'Arabian International Special Technical Services L.L.C.'
+  // 3. Detect Customer Name (Bill To)
+  let customerName = 'JSS PIPES AND FITTINGS TRADING LLC'
   const billToMatch = combinedText.match(/Bill\s*To\s*[\r\n]+([^\r\n]{3,80})/i)
   if (billToMatch && billToMatch[1] && !billToMatch[1].toLowerCase().includes('order date')) {
     customerName = billToMatch[1].trim()
+  } else if (/JSS\s+PIPES/i.test(combinedText)) {
+    customerName = 'JSS PIPES AND FITTINGS TRADING LLC'
   } else if (/Arabian\s+International/i.test(combinedText)) {
     customerName = 'Arabian International Special Technical Services L.L.C.'
   } else if (/adnoc/i.test(combinedText)) {
@@ -917,16 +935,16 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     customerName = 'McDermott Middle East Inc'
   }
 
-  // 2. Detect PO Number / Ref#
+  // 4. Detect PO Number / Ref#
   let poNumber = ''
-  const refMatch = combinedText.match(/(?:Ref\s*#?|P\.O\.?\s*(?:#|No|Number)?|Order\s*(?:#|No|Number)?|PO\s*#?)[\s:]+([A-Za-z0-9\-_/]{4,30})/i)
+  const refMatch = combinedText.match(/(?:Ref\s*#?|P\.O\.?\s*(?:#|No|Number)?|Order\s*(?:#|No|Number)?|PO\s*#?)[\s:]+([A-Za-z0-9\-_/]{4,35})/i)
   if (refMatch) {
     poNumber = refMatch[1].trim()
   } else {
     poNumber = file.name.replace(/\.[^/.]+$/, '').toUpperCase()
   }
 
-  // 3. Detect Order Date / Delivery Date
+  // 5. Detect Order Date / Delivery Date
   const dateMatch = combinedText.match(/(?:Order\s*Date|Date|Delivery\s*Date)[\s:]+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4}|\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})/i)
   let deliveryDate = new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10)
   if (dateMatch) {
@@ -937,80 +955,102 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     }
   }
 
-  // 4. Line Items Table Parser
-  // Matches rows like:
-  // # Item & Description Client PO Qty Rate Amount
-  // 1 BL25150RFA105/A350LF2ST&H-STOCK \n BLIND, 1", 150#, RF, ASTM A105N... \n 1 6.00 pcs 25.00 150.00
+  // 6. Comprehensive Line Items Table Parser
+  // Works with both structured multi-line entries:
+  // Item Code (CR..., RT..., BL..., LBL..., WSO..., etc.)
+  // Description (CONC. RED..., REDUCING TEE..., FLANGE..., BLIND..., etc.)
+  // HEAT NO: 68C20M091, LN: BB10
+  // Line index + Quantity + Unit (e.g. "1 2.00 20.00 40.00" or "2 3.00 pcs 35.00 105.00")
   const lines = combinedText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean)
-  const items: { itemCode: string; itemDescription: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[] = []
+  const items: { itemCode: string; itemDescription: string; heatNumber?: string; location?: string; requiredQty: number; clientPoItemNo?: string; rate?: number }[] = []
 
   // Known item code prefixes in oilfield flanges, fittings, and pipes
-  const itemCodePrefixPattern = /^(?:BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)\d+/i
+  const itemCodePattern = /^(?:CR|RT|BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)\d+[A-Z0-9_\-\/&]*/i
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Check for row start with line number or direct item code: e.g. "1 BL25150RFA105/A350LF2ST&H-STOCK" or "BL25150RFA105..."
-    const numAndCodeMatch = line.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{6,35})/i)
-    const directCodeMatch = !numAndCodeMatch && itemCodePrefixPattern.test(line) ? line.match(/^([A-Z0-9_\-\/&]{6,35})/i) : null
+    // Check for row start with line number or direct item code:
+    // e.g. "1 CR5040S80WPBBENKAN-STOCK" or "CR5040S80WPBBENKAN-STOCK" or "1 BL25150RFA105/A350LF2ST&H-STOCK"
+    const numAndCodeMatch = line.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{6,40})/i)
+    const directCodeMatch = !numAndCodeMatch && itemCodePattern.test(line) ? line.match(/^([A-Z0-9_\-\/&]{6,40})/i) : null
 
     let code = ''
-    if (numAndCodeMatch) {
+    if (numAndCodeMatch && itemCodePattern.test(numAndCodeMatch[2])) {
       code = numAndCodeMatch[2].trim()
     } else if (directCodeMatch) {
       code = directCodeMatch[1].trim()
     }
 
-    if (code && code.length >= 6 && !code.toUpperCase().startsWith('DISCOUNT') && !code.toUpperCase().startsWith('TOTAL')) {
-      // Collect description from following lines until we hit the line with Qty (e.g., "1 6.00 pcs" or "6.00 pcs" or "6.00 25.00")
+    if (code && code.length >= 6 && !code.toUpperCase().startsWith('DISCOUNT') && !code.toUpperCase().startsWith('TOTAL') && !code.toUpperCase().startsWith('SUB')) {
       let descLines: string[] = []
+      let heatNumber: string | undefined = undefined
+      let location: string | undefined = undefined
       let qty = 1
       let rate = 0
       let clientPoItemNo = ''
 
-      for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+      // Lookahead up to 10 lines to collect Description, HEAT NO, LN (Location), and Quantity
+      for (let j = i + 1; j < Math.min(i + 12, lines.length); j++) {
         const nextLine = lines[j]
 
-        // Check if next line contains Qty / pcs / Rate / Amount
-        // e.g. "1 6.00 pcs 25.00 150.00" or "6.00 pcs" or "1 6.00" or "6.00"
-        const qtyMatch = nextLine.match(/(?:^|\s+)(\d{1,4}(?:\.\d{1,2})?)\s*(?:pcs|PCS|nos|NOS|EA|ea)?(?:\s+(\d+(?:\.\d{1,2})?))?/i)
-        const isNextItem = itemCodePrefixPattern.test(nextLine) || /^\d{1,3}\s+[A-Z0-9_\-\/&]{6,35}/i.test(nextLine)
-
-        if (isNextItem) {
+        // Stop if we hit the next line item
+        const isNextCode = itemCodePattern.test(nextLine) || /^\d{1,3}\s+[A-Z0-9_\-\/&]{6,40}/i.test(nextLine)
+        if (isNextCode) {
           break
         }
 
-        if (/\b(?:pcs|PCS|nos|NOS|EA|ea)\b/i.test(nextLine) || /^\d+\s+\d+(?:\.\d{2})?\s*pcs/i.test(nextLine)) {
-          // Extract Qty
-          const m = nextLine.match(/(\d+(?:\.\d+)?)\s*(?:pcs|PCS)/i) || nextLine.match(/(\d+(?:\.\d+)?)/)
+        // Check for HEAT NO / HEAT NUMBER
+        const heatMatch = nextLine.match(/HEAT\s*(?:NO|NUMBER|#)?[\s:]+([A-Za-z0-9\-_]+)/i)
+        if (heatMatch) {
+          heatNumber = heatMatch[1].trim()
+        }
+
+        // Check for Location LN: BB10 or LOC: ...
+        const locMatch = nextLine.match(/LN[\s:]+([A-Za-z0-9\-_]+)/i) || nextLine.match(/LOC[\s:]+([A-Za-z0-9\-_]+)/i)
+        if (locMatch) {
+          location = locMatch[1].trim()
+        }
+
+        // Check for Quantity: e.g. "1 2.00 20.00 40.00" or "2 3.00 pcs 35.00" or "2.00 pcs" or "3.00"
+        const qtyLineMatch = nextLine.match(/^(?:\d{1,3}\s+)?(\d{1,4}(?:\.\d{1,2})?)\s*(?:pcs|PCS|nos|NOS|EA|ea)?(?:\s+(\d+(?:\.\d{1,2})?))?/i)
+        if (/\b(?:pcs|PCS|nos|NOS|EA|ea)\b/i.test(nextLine) || /^\d{1,3}\s+\d+(?:\.\d{1,2})?\s*pcs/i.test(nextLine) || /^\d{1,3}\s+\d+(?:\.\d{2})?\s+\d+(?:\.\d{2})?/i.test(nextLine)) {
+          const m = nextLine.match(/(\d+(?:\.\d+)?)\s*(?:pcs|PCS)/i) || nextLine.match(/^(?:\d{1,3}\s+)?(\d+(?:\.\d+)?)/)
           if (m) {
             qty = Math.round(parseFloat(m[1])) || 1
           }
+          if (qtyLineMatch && qtyLineMatch[2]) {
+            rate = parseFloat(qtyLineMatch[2]) || 0
+          }
           break
-        } else if (nextLine.includes('RF') || nextLine.includes('FLANGE') || nextLine.includes('BLIND') || nextLine.includes('ASTM') || nextLine.includes('ASME') || nextLine.includes('NACE') || nextLine.includes('CL.') || nextLine.includes('RTJ') || nextLine.includes('INCH') || nextLine.includes('"')) {
+        } else if (
+          !heatMatch &&
+          (nextLine.includes('CONC') || nextLine.includes('RED') || nextLine.includes('TEE') || nextLine.includes('FLANGE') ||
+           nextLine.includes('BLIND') || nextLine.includes('ASTM') || nextLine.includes('ASME') || nextLine.includes('BENKAN') ||
+           nextLine.includes('SCH') || nextLine.includes('BW') || nextLine.includes('SMLS') || nextLine.includes('WPB') ||
+           nextLine.includes('RF') || nextLine.includes('RTJ') || nextLine.includes('NACE') || nextLine.includes('"'))
+        ) {
           descLines.push(nextLine)
         }
       }
 
-      const itemDesc = descLines.join(' ').trim() || `${code} Flange / Oilfield Fitting`
+      const itemDesc = descLines.join(' ').trim() || `${code} Oilfield Fitting / Flange`
 
-      // Avoid immediate duplicate consecutive codes
-      const existing = items[items.length - 1]
-      if (!existing || existing.itemCode !== code || existing.itemDescription !== itemDesc) {
-        items.push({
-          itemCode: code,
-          itemDescription: itemDesc,
-          requiredQty: qty || 1,
-          clientPoItemNo,
-          rate
-        })
-      }
+      items.push({
+        itemCode: code,
+        itemDescription: itemDesc,
+        heatNumber,
+        location,
+        requiredQty: qty || 1,
+        clientPoItemNo,
+        rate
+      })
     }
   }
 
   // Fallback: If line scanner found nothing or fewer items, run regex search for all oilfield codes and descriptions
   if (items.length === 0) {
-    const codeMatches = combinedText.matchAll(/(?:BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)[A-Za-z0-9_\-\/&]{4,30}/gi)
+    const codeMatches = combinedText.matchAll(/(?:CR|RT|BL|LBL|WSO|WN|LWN|SW|TH|EL|CPL|TEE|RED|CAP|WBL|NIP)[A-Za-z0-9_\-\/&]{4,30}/gi)
     const seen = new Set<string>()
     for (const m of codeMatches) {
       const c = m[0].toUpperCase()
@@ -1018,8 +1058,8 @@ export async function parseCustomerSOPDF(file: File): Promise<{
         seen.add(c)
         items.push({
           itemCode: c,
-          itemDescription: `Oilfield Flange/Fitting ${c} ASME B16.5`,
-          requiredQty: 5
+          itemDescription: `Oilfield Material ${c} ASME B16.9 / B16.5`,
+          requiredQty: 2
         })
       }
     }

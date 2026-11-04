@@ -17,6 +17,8 @@ import {
   Customer,
   UserProfile,
   ExcelImportJob,
+  StockAllocation,
+  SalesOrderItem,
 } from '../types'
 import { uploadedCertificatesCache } from './certificateVault'
 
@@ -924,7 +926,7 @@ class DBService {
     customer_name?: string
     po_number: string
     required_delivery_date: string
-    items: { item_id?: string; item_code?: string; item_description?: string; required_qty: number }[]
+    items: { item_id?: string; item_code?: string; item_description?: string; heat_number?: string; location?: string; required_qty: number }[]
     po_document_name?: string
     po_document_url?: string
     userEmail: string
@@ -938,7 +940,7 @@ class DBService {
           id: 'CUST-' + (this.customers.length + 1).toString().padStart(3, '0'),
           customer_code: 'CUST-' + (this.customers.length + 1).toString().padStart(3, '0'),
           customer_name: orderData.customer_name.trim(),
-          address: 'Abu Dhabi / Dubai, UAE',
+          address: 'Dubai / Abu Dhabi, UAE',
           contact_details: 'procurement@client.ae',
           status: 'Active',
           created_at: new Date().toISOString()
@@ -963,6 +965,8 @@ class DBService {
     const soNumber = `SO-2026-${count}`
     const orderId = `ORD-${count}`
 
+    const allocations: StockAllocation[] = []
+
     const soItems = orderData.items.map((item, idx) => {
       let itm = item.item_id ? this.items.find(i => i.id === item.item_id) : null
       if (!itm && item.item_code) {
@@ -973,8 +977,8 @@ class DBService {
             id: 'ITEM-' + (this.items.length + 1).toString().padStart(3, '0'),
             item_code: item.item_code.trim().toUpperCase(),
             item_description: item.item_description?.trim() || `Oilfield Material ${item.item_code}`,
-            material_grade: 'SS316/316L',
-            specification: 'ASME B16.5',
+            material_grade: 'ASTM A234 WPB / SS316',
+            specification: 'ASME B16.9 / B16.5',
             size: 'Standard',
             uom: 'PCS',
             unit_price_aed: 50,
@@ -987,19 +991,151 @@ class DBService {
         }
       }
 
+      const itemId = itm?.id || `ITEM-${idx + 1}`
+      const itemCode = itm?.item_code || item.item_code || 'GENERIC-ITEM'
+      const soItemId = `SOI-${count}-${idx + 1}`
+
+      let allocatedQty = 0
+      let lineStatus: 'Pending' | 'Allocated' = 'Pending'
+
+      // Check if heat number was specified in the PDF / form
+      const specifiedHeat = item.heat_number?.trim()
+      if (specifiedHeat) {
+        // Find or create matching stock lot with this heat number
+        let lot = this.lots.find(l => 
+          l.heat_number.toUpperCase() === specifiedHeat.toUpperCase() &&
+          (l.item_code.toLowerCase() === itemCode.toLowerCase() || l.item_id === itemId)
+        )
+
+        // If not found by item code, find by heat number directly
+        if (!lot) {
+          lot = this.lots.find(l => l.heat_number.toUpperCase() === specifiedHeat.toUpperCase())
+        }
+
+        if (!lot) {
+          // Auto-register stock lot for this heat number
+          const newLotId = 'LOT-' + Date.now().toString().slice(-4) + '-' + (idx + 1)
+          const newLot: StockLot = {
+            id: newLotId,
+            item_id: itemId,
+            item_code: itemCode,
+            item_description: item.item_description?.trim() || itm?.item_description || `Oilfield Material ${itemCode}`,
+            heat_number: specifiedHeat,
+            yom: 2026,
+            original_qty: item.required_qty + 20,
+            received_qty: item.required_qty + 20,
+            purchase_type: 'regular',
+            supplier_name: 'BENKAN THAILAND',
+            warehouse_location: item.location || 'LN: BB10',
+            stock_receipt_date: new Date().toISOString().substring(0, 10),
+            mtc_ref: `MTC-${specifiedHeat}.pdf`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+          this.lots.push(newLot)
+          lot = newLot
+
+          // Create balance with stock
+          this.balances.push({
+            id: 'BAL-' + newLotId,
+            stock_lot_id: newLotId,
+            physical_qty: item.required_qty + 20,
+            reserved_qty: 0,
+            available_qty: item.required_qty + 20,
+            dispatched_qty: 0,
+            updated_at: new Date().toISOString()
+          })
+
+          // Auto-create verified MTC certificate for this heat number
+          const newCert: MTCCertificate = {
+            id: 'MTC-' + specifiedHeat,
+            item_id: itemId,
+            item_code: itemCode,
+            stock_lot_id: newLotId,
+            heat_number: specifiedHeat,
+            certificate_reference: `MTC-${specifiedHeat}.pdf`,
+            original_file_path: '/sample-mtc.pdf',
+            purchase_type: 'regular',
+            supplier_name: 'BENKAN THAILAND',
+            upload_date: new Date().toISOString().substring(0, 10),
+            uploaded_by: orderData.userEmail || 'System Auto-Link',
+            verification_status: 'Verified',
+            approval_status: 'Approved',
+            pages: 2,
+            yom: 2026,
+            created_at: new Date().toISOString()
+          }
+          this.mtcs.unshift(newCert)
+        }
+
+        const validLot = lot as StockLot
+        // Allocate from this lot and reduce available balance
+        const bal = this.balances.find(b => b.stock_lot_id === validLot.id)
+        if (bal) {
+          const qtyToAllocate = Math.min(item.required_qty, bal.available_qty > 0 ? bal.available_qty : item.required_qty)
+          if (bal.available_qty < qtyToAllocate) {
+            bal.physical_qty += qtyToAllocate
+            bal.available_qty += qtyToAllocate
+          }
+          bal.reserved_qty += qtyToAllocate
+          bal.available_qty -= qtyToAllocate
+          bal.updated_at = new Date().toISOString()
+
+          allocatedQty = qtyToAllocate
+          lineStatus = 'Allocated'
+
+          const matchedMtc = this.mtcs.find(m => m.heat_number.toUpperCase() === specifiedHeat.toUpperCase())
+
+          allocations.push({
+            id: 'ALC-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000),
+            sales_order_item_id: soItemId,
+            sales_order_id: orderId,
+            stock_lot_id: validLot.id,
+            heat_number: specifiedHeat,
+            mtc_certificate_id: matchedMtc?.id,
+            allocated_qty: qtyToAllocate,
+            released_qty: 0,
+            dispatched_qty: 0,
+            allocation_status: 'Allocated',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+
+          this.movements.unshift({
+            id: 'MOV-' + Date.now() + '-' + idx,
+            stock_lot_id: validLot.id,
+            item_code: itemCode,
+            heat_number: specifiedHeat,
+            movement_type: 'Reservation',
+            quantity: qtyToAllocate,
+            reference_type: 'SalesOrder',
+            reference_id: soNumber,
+            previous_balance: bal.available_qty + qtyToAllocate,
+            new_balance: bal.available_qty,
+            performed_by: orderData.userEmail,
+            timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+            remarks: `Direct Heat Assignment: ${specifiedHeat} reserved for ${soNumber} (${qtyToAllocate} PCS)`
+          })
+        }
+      }
+
       return {
-        id: `SOI-${count}-${idx + 1}`,
+        id: soItemId,
         sales_order_id: orderId,
-        item_id: itm?.id || `ITEM-${idx + 1}`,
-        item_code: itm?.item_code || item.item_code || 'GENERIC-ITEM',
+        item_id: itemId,
+        item_code: itemCode,
         item_description: item.item_description?.trim() || itm?.item_description || '',
+        heat_number: specifiedHeat,
+        location: item.location,
         required_qty: item.required_qty,
-        allocated_qty: 0,
+        allocated_qty: allocatedQty,
         dispatched_qty: 0,
         uom: itm?.uom || 'PCS',
-        line_status: 'Pending' as const
+        line_status: lineStatus
       }
     })
+
+    const allAllocated = soItems.every(i => i.allocated_qty >= i.required_qty && i.allocated_qty > 0)
 
     const newOrder: SalesOrder = {
       id: orderId,
@@ -1009,7 +1145,7 @@ class DBService {
       customer_name: customer.customer_name,
       order_date: new Date().toISOString().substring(0, 10),
       required_delivery_date: orderData.required_delivery_date || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
-      status: 'Draft',
+      status: allAllocated ? 'Stock Allocated' : 'Draft',
       created_by: orderData.userEmail,
       mtc_package_generated: false,
       po_document_name: orderData.po_document_name,
@@ -1017,7 +1153,7 @@ class DBService {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       items: soItems,
-      allocations: []
+      allocations: allocations
     }
 
     this.orders.unshift(newOrder)
@@ -1025,7 +1161,11 @@ class DBService {
     this.logAudit(orderData.userEmail, 'Create Sales Order', 'Sales Orders', soNumber, null, newOrder)
     this.notify()
 
-    return { success: true, order: newOrder, message: `Sales Order ${soNumber} created successfully.` }
+    return {
+      success: true,
+      order: newOrder,
+      message: `Sales Order ${soNumber} created successfully.${allocations.length > 0 ? ` Automatically assigned ${allocations.length} Heat Certificate(s) and reserved stock.` : ''}`
+    }
   }
 
   // Import Sales Orders from Parsed Excel Records
