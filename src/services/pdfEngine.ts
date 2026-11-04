@@ -990,8 +990,8 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       let rate = 0
       let clientPoItemNo = ''
 
-      // Lookahead up to 10 lines to collect Description, HEAT NO, LN (Location), and Quantity
-      for (let j = i + 1; j < Math.min(i + 12, lines.length); j++) {
+      // Lookahead up to 14 lines to collect Description, HEAT NO, LN (Location), and Quantity
+      for (let j = i + 1; j < Math.min(i + 14, lines.length); j++) {
         const nextLine = lines[j]
 
         // Stop if we hit the next line item
@@ -1012,24 +1012,44 @@ export async function parseCustomerSOPDF(file: File): Promise<{
           location = locMatch[1].trim()
         }
 
-        // Check for Quantity: e.g. "1 2.00 20.00 40.00" or "2 3.00 pcs 35.00" or "2.00 pcs" or "3.00"
-        const qtyLineMatch = nextLine.match(/^(?:\d{1,3}\s+)?(\d{1,4}(?:\.\d{1,2})?)\s*(?:pcs|PCS|nos|NOS|EA|ea)?(?:\s+(\d+(?:\.\d{1,2})?))?/i)
-        if (/\b(?:pcs|PCS|nos|NOS|EA|ea)\b/i.test(nextLine) || /^\d{1,3}\s+\d+(?:\.\d{1,2})?\s*pcs/i.test(nextLine) || /^\d{1,3}\s+\d+(?:\.\d{2})?\s+\d+(?:\.\d{2})?/i.test(nextLine)) {
-          const m = nextLine.match(/(\d+(?:\.\d+)?)\s*(?:pcs|PCS)/i) || nextLine.match(/^(?:\d{1,3}\s+)?(\d+(?:\.\d+)?)/)
-          if (m) {
-            qty = Math.round(parseFloat(m[1])) || 1
+        // Handle case where 'pcs' appears alone on its line
+        if (/^pcs$/i.test(nextLine)) {
+          const prevLine = lines[j - 1]
+          const prevNum = prevLine?.match(/(?:^|\s+)(\d{1,4}(?:\.\d{1,2})?)$/)
+          if (prevNum) {
+            qty = Math.round(parseFloat(prevNum[1])) || 1
           }
-          if (qtyLineMatch && qtyLineMatch[2]) {
-            rate = parseFloat(qtyLineMatch[2]) || 0
+          if (descLines.length > 0 && descLines[descLines.length - 1] === prevLine) {
+            descLines.pop()
           }
           break
-        } else if (
-          !heatMatch &&
-          (nextLine.includes('CONC') || nextLine.includes('RED') || nextLine.includes('TEE') || nextLine.includes('FLANGE') ||
-           nextLine.includes('BLIND') || nextLine.includes('ASTM') || nextLine.includes('ASME') || nextLine.includes('BENKAN') ||
-           nextLine.includes('SCH') || nextLine.includes('BW') || nextLine.includes('SMLS') || nextLine.includes('WPB') ||
-           nextLine.includes('RF') || nextLine.includes('RTJ') || nextLine.includes('NACE') || nextLine.includes('"'))
-        ) {
+        }
+
+        // Handle item row like "1 2.00 20.00 40.00" or "2 3.00"
+        const qtyRowMatch = nextLine.match(/^(\d{1,3})\s+(\d{1,4}(?:\.\d{1,2})?)(?:\s+pcs)?(?:\s+(\d+(?:\.\d{1,2})?))?/i)
+        if (qtyRowMatch && !heatMatch) {
+          clientPoItemNo = qtyRowMatch[1]
+          qty = Math.round(parseFloat(qtyRowMatch[2])) || 1
+          if (qtyRowMatch[3]) {
+            rate = parseFloat(qtyRowMatch[3]) || 0
+          }
+          // If the immediate next line is 'pcs', advance past it
+          if (lines[j + 1] && /^pcs$/i.test(lines[j + 1])) {
+            j++
+          }
+          break
+        }
+
+        // Handle direct "3.00 pcs" or "2 pcs"
+        const directPcsMatch = nextLine.match(/(\d+(?:\.\d+)?)\s*(?:pcs|PCS|nos|NOS|EA|ea)/i)
+        if (directPcsMatch && !heatMatch) {
+          qty = Math.round(parseFloat(directPcsMatch[1])) || 1
+          break
+        }
+
+        // Filter out rate/total numbers from description lines
+        const isQtyOrMoney = /^\d{1,3}\s+\d+(?:\.\d{1,2})?/.test(nextLine) || /^\d+(?:\.\d{2})?\s+\d+(?:\.\d{2})?/.test(nextLine)
+        if (!heatMatch && !isQtyOrMoney && !/^pcs$/i.test(nextLine)) {
           descLines.push(nextLine)
         }
       }
