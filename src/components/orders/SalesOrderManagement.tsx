@@ -60,7 +60,7 @@ import {
   StickerItem,
 } from '../../services/stickerEngine'
 
-import { SummarySheetModal } from './SummarySheetModal'
+import { SummarySheetModal, PreviewTab } from './SummarySheetModal'
 
 interface SalesOrderManagementProps {
   onSelectOrder: (order: SalesOrder) => void
@@ -125,6 +125,18 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
   const [generatingMtcSoId, setGeneratingMtcSoId] = useState<string | null>(null)
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false)
   const [summarySheetOrder, setSummarySheetOrder] = useState<SalesOrder | null>(null)
+  const [summarySheetTab, setSummarySheetTab] = useState<PreviewTab>('summary')
+  const [summarySheetDirectPreview, setSummarySheetDirectPreview] = useState(false)
+
+  const handleOpenPreviewModal = (
+    order: SalesOrder,
+    tab: PreviewTab = 'summary',
+    directPreview: boolean = true
+  ) => {
+    setSummarySheetTab(tab)
+    setSummarySheetDirectPreview(directPreview)
+    setSummarySheetOrder(order)
+  }
 
   const orders = db.getOrders()
   const customers = db.getCustomers()
@@ -835,9 +847,9 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                       <span>Stickers (58x39mm .pdf)</span>
                     </button>
 
-                    {/* 2. 9-Column SUMMARY SHEET Excel */}
+                    {/* 2. SUMMARY SHEET Preview */}
                     <button
-                      onClick={() => handleDownloadStickerSummaryExcel(order)}
+                      onClick={() => handleOpenPreviewModal(order, 'summary', true)}
                       className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow-sm transition-colors"
                       title="Preview Summary Sheet, edit details, allocate suppliers & export Excel"
                     >
@@ -845,31 +857,31 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                       <span>Preview</span>
                     </button>
 
-                    {/* 3. CIPL Logistics */}
+                    {/* 3. CIPL Logistics Preview */}
                     <button
-                      onClick={() => handleDownloadCIPL(order)}
+                      onClick={() => handleOpenPreviewModal(order, 'cipl_invoice', true)}
                       className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow-sm transition-colors"
-                      title="1-Click export Customs Commercial Invoice & Packing List (CIPL)"
+                      title="Preview CIPL Commercial Invoice & Packing List before download"
                     >
                       <Truck className="h-3 w-3 text-blue-200" />
                       <span>CIPL Logistics (.xlsx)</span>
                     </button>
 
-                    {/* 4. Client Technical Summary */}
+                    {/* 4. Client Technical Summary Preview */}
                     <button
-                      onClick={() => handleDownloadClientSummary(order)}
-                      className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow-sm transition-colors"
-                      title="1-Click export publication Client Sourcing Summary"
+                      onClick={() => handleOpenPreviewModal(order, 'client', true)}
+                      className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow-sm transition-colors"
+                      title="Preview Client Technical Summary before download"
                     >
-                      <FileText className="h-3 w-3 text-indigo-200" />
+                      <FileText className="h-3 w-3 text-teal-200" />
                       <span>Client Summary (.xlsx)</span>
                     </button>
 
-                    {/* 5. Stores Internal Summary */}
+                    {/* 5. Stores Internal Summary Preview */}
                     <button
-                      onClick={() => handleDownloadStoresSummary(order)}
+                      onClick={() => handleOpenPreviewModal(order, 'stores', true)}
                       className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow-sm transition-colors"
-                      title="1-Click export Stores Location & Inspection Register"
+                      title="Preview Stores Internal Sheet with supplier details before download"
                     >
                       <Layers className="h-3 w-3 text-purple-200" />
                       <span>Stores Summary (.xlsx)</span>
@@ -1687,8 +1699,13 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       {summarySheetOrder && (
         <SummarySheetModal
           isOpen={!!summarySheetOrder}
-          onClose={() => setSummarySheetOrder(null)}
+          onClose={() => {
+            setSummarySheetOrder(null)
+            setSummarySheetDirectPreview(false)
+          }}
           order={summarySheetOrder}
+          initialTab={summarySheetTab}
+          initialShowPreview={summarySheetDirectPreview}
           onOrderUpdated={(updated) => {
             setSummarySheetOrder(updated)
           }}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   X,
   FileSpreadsheet,
@@ -30,6 +30,7 @@ import {
   autoDetectCountryOfOrigin,
   autoDetectHSCode,
   estimateUnitWeight,
+  numToWords,
 } from '../../services/sourcingEngine'
 import {
   generateStickersPdf,
@@ -37,10 +38,14 @@ import {
   StickerItem,
 } from '../../services/stickerEngine'
 
+export type PreviewTab = 'summary' | 'stores' | 'client' | 'cipl_invoice' | 'cipl_packing'
+
 interface SummarySheetModalProps {
   isOpen: boolean
   onClose: () => void
   order: SalesOrder
+  initialTab?: PreviewTab
+  initialShowPreview?: boolean
   onOrderUpdated: (updatedOrder: SalesOrder) => void
 }
 
@@ -59,6 +64,8 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
   isOpen,
   onClose,
   order,
+  initialTab,
+  initialShowPreview,
   onOrderUpdated,
 }) => {
   if (!isOpen || !order) return null
@@ -123,7 +130,13 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
   const [isExporting, setIsExporting] = useState(false)
   const [successBanner, setSuccessBanner] = useState<string | null>(null)
   const [showBulkToolbar, setShowBulkToolbar] = useState(false)
-  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [showPreviewModal, setShowPreviewModal] = useState(initialShowPreview || false)
+  const [previewTab, setPreviewTab] = useState<PreviewTab>(initialTab || 'summary')
+
+  useEffect(() => {
+    if (initialTab) setPreviewTab(initialTab)
+    if (initialShowPreview !== undefined) setShowPreviewModal(initialShowPreview)
+  }, [initialTab, initialShowPreview, isOpen])
 
   // Bulk Allocation Fields
   const [bulkSupplier, setBulkSupplier] = useState('')
@@ -1000,119 +1013,568 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
 
       </div>
 
-      {/* Visual Excel Layout Preview Modal */}
+      {/* Visual Excel Layout Preview Modal with Tabs for ALL Sheets */}
       {showPreviewModal && (
-        <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-sm overflow-y-auto p-4 flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden flex flex-col max-h-[88vh]">
-            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-60 bg-slate-950/75 backdrop-blur-sm overflow-y-auto p-3 sm:p-5 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl overflow-hidden flex flex-col max-h-[92vh]">
+            
+            {/* Modal Header & Sheet Tabs */}
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700">
               <div className="flex items-center space-x-2">
                 <FileSpreadsheet className="h-5 w-5 text-emerald-400" />
-                <span className="font-bold text-sm">Visual Excel Layout Preview</span>
+                <span className="font-bold text-sm tracking-wide">Excel Deliverables Preview</span>
                 <span className="text-xs text-slate-400">({items.length} items)</span>
               </div>
-              <button onClick={() => setShowPreviewModal(false)} className="text-slate-400 hover:text-white">
+
+              {/* Sheet Switcher Tabs */}
+              <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('summary')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    previewTab === 'summary'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  <span>Summary Sheet (8 Cols)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('stores')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    previewTab === 'stores'
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>Stores Sheet (11 Cols)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('client')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    previewTab === 'client'
+                      ? 'bg-teal-600 text-white shadow'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>Client Summary</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('cipl_invoice')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    previewTab === 'cipl_invoice'
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  <Truck className="h-3.5 w-3.5" />
+                  <span>CIPL Invoice</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('cipl_packing')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    previewTab === 'cipl_packing'
+                      ? 'bg-sky-600 text-white shadow'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  <span>CIPL Packing List</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors self-end sm:self-auto"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1 bg-slate-50 text-xs font-sans">
-              <div className="bg-white border-2 border-slate-400 shadow-md p-6 max-w-4xl mx-auto space-y-4">
+            {/* Preview Sheet Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-100 text-xs font-sans">
+              <div className="bg-white border-2 border-slate-300 rounded-xl shadow-lg p-5 sm:p-7 max-w-5xl mx-auto space-y-4">
                 
-                {/* Excel Title */}
-                <div className="text-center font-bold text-base border-b-2 border-slate-300 pb-2">
-                  SUMMARY SHEET
-                </div>
+                {/* TAB 1: SUMMARY SHEET (8 COLUMNS) */}
+                {previewTab === 'summary' && (
+                  <div className="space-y-4">
+                    <div className="text-center font-bold text-base tracking-wider border-b-2 border-slate-300 pb-2 text-slate-900">
+                      SUMMARY SHEET
+                    </div>
 
-                {/* Excel Metadata & Logo Grid */}
-                <div className="grid grid-cols-3 border border-slate-300 text-xs">
-                  <div className="col-span-2 p-2.5 space-y-1 font-bold border-r border-slate-300">
-                    <div>Client : {clientName}</div>
-                    <div>PO Number: {poNumber}</div>
-                    <div>MSG Ref:   {msgRef || order.so_number}</div>
-                  </div>
-                  <div className="p-2.5 flex items-center justify-center bg-slate-50">
-                    <div className="text-center font-bold font-mono text-orange-600">
-                      [ MSG OILFIELD LOGO ]
+                    <div className="grid grid-cols-3 border border-slate-300 text-xs">
+                      <div className="col-span-2 p-3 space-y-1 font-bold border-r border-slate-300 text-slate-800">
+                        <div>Client : {clientName}</div>
+                        <div>PO Number: {poNumber}</div>
+                        <div>MSG Ref:   {msgRef || order.so_number}</div>
+                      </div>
+                      <div className="p-3 flex items-center justify-center bg-slate-50">
+                        <div className="text-center font-bold font-mono text-orange-600 tracking-wide">
+                          [ MSG OILFIELD LOGO ]
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-300 rounded">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr className="bg-slate-200/90 font-bold border-b border-slate-300 text-slate-800 text-center">
+                            <th className="p-2 border-r border-slate-300">Item.CF.Client PO Item No</th>
+                            <th className="p-2 border-r border-slate-300 text-left min-w-[240px]">Item Desc</th>
+                            <th className="p-2 border-r border-slate-300 w-16">QuantityOrdered</th>
+                            <th className="p-2 border-r border-slate-300 w-12">Unit</th>
+                            <th className="p-2 border-r border-slate-300 w-24">Heat Number</th>
+                            <th className="p-2 border-r border-slate-300 w-28">Make</th>
+                            <th className="p-2 border-r border-slate-300 w-24">Certificate Number</th>
+                            <th className="p-2 w-28">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {items.map((it, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="p-2 text-center font-mono border-r border-slate-200 font-semibold">
+                                {it.client_po_item_no || idx + 1}
+                              </td>
+                              <td className="p-2 border-r border-slate-200 text-left font-sans">
+                                {it.description}
+                              </td>
+                              <td className="p-2 text-center font-bold border-r border-slate-200">
+                                {it.qty}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200">
+                                {it.uom}
+                              </td>
+                              <td className="p-2 text-center font-mono font-bold text-red-700 border-r border-slate-200">
+                                {it.heat_number || '-'}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200">
+                                {it.make || '-'}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.certificate_number || '-'}
+                              </td>
+                              <td className="p-2 text-center text-slate-700">
+                                {it.remarks || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Excel Table */}
-                <div className="overflow-x-auto border border-slate-300">
-                  <table className="w-full text-[11px] border-collapse">
-                    <thead>
-                      <tr className="bg-slate-200/80 font-bold border-b border-slate-300 text-slate-800 text-center">
-                        <th className="p-1.5 border-r border-slate-300">Item.CF.Client PO Item No</th>
-                        <th className="p-1.5 border-r border-slate-300 text-left">Item Desc</th>
-                        <th className="p-1.5 border-r border-slate-300">QuantityOrdered</th>
-                        <th className="p-1.5 border-r border-slate-300">Unit</th>
-                        <th className="p-1.5 border-r border-slate-300">Heat Number</th>
-                        <th className="p-1.5 border-r border-slate-300">Make</th>
-                        <th className="p-1.5 border-r border-slate-300">Certificate Number</th>
-                        <th className="p-1.5">Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {items.map((it, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50">
-                          <td className="p-1.5 text-center font-mono border-r border-slate-200">
-                            {it.client_po_item_no || idx + 1}
-                          </td>
-                          <td className="p-1.5 border-r border-slate-200 text-left font-sans">
-                            {it.description}
-                          </td>
-                          <td className="p-1.5 text-center font-bold border-r border-slate-200">
-                            {it.qty}
-                          </td>
-                          <td className="p-1.5 text-center border-r border-slate-200">
-                            {it.uom}
-                          </td>
-                          <td className="p-1.5 text-center font-mono font-bold text-red-700 border-r border-slate-200">
-                            {it.heat_number || '-'}
-                          </td>
-                          <td className="p-1.5 text-center border-r border-slate-200">
-                            {it.make || '-'}
-                          </td>
-                          <td className="p-1.5 text-center font-mono border-r border-slate-200">
-                            {it.certificate_number || '-'}
-                          </td>
-                          <td className="p-1.5 text-center text-slate-700">
-                            {it.remarks || '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {/* TAB 2: STORES SHEET (11 COLUMNS WITH SUPPLIER DETAILS) */}
+                {previewTab === 'stores' && (
+                  <div className="space-y-4">
+                    <div className="text-center font-bold text-base tracking-wider border-b-2 border-purple-300 pb-2 text-purple-950">
+                      MSG OILFIELD - STORES SUMMARY SHEET (INTERNAL &amp; SOURCING)
+                    </div>
+
+                    <div className="grid grid-cols-3 border border-slate-300 text-xs">
+                      <div className="col-span-2 p-3 space-y-1 font-bold border-r border-slate-300 text-slate-800">
+                        <div>Client : {clientName}</div>
+                        <div>PO Number: {poNumber}</div>
+                        <div>MSG Ref:   {msgRef || order.so_number}</div>
+                      </div>
+                      <div className="p-3 flex items-center justify-center bg-purple-50/50">
+                        <div className="text-center font-bold font-mono text-purple-700 tracking-wide">
+                          [ STORES SECURE VIEW ]
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-300 rounded">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr className="bg-purple-100 font-bold border-b border-purple-200 text-purple-950 text-center">
+                            <th className="p-2 border-r border-purple-200 w-12">SL NO</th>
+                            <th className="p-2 border-r border-purple-200 w-20">CLIENT PO ITEM NO</th>
+                            <th className="p-2 border-r border-purple-200 text-left min-w-[200px]">Description</th>
+                            <th className="p-2 border-r border-purple-200 w-16">PO Qty</th>
+                            <th className="p-2 border-r border-purple-200 w-12">UOM</th>
+                            <th className="p-2 border-r border-purple-200 w-24">Heat Number</th>
+                            <th className="p-2 border-r border-purple-200 w-24">Certificate #</th>
+                            <th className="p-2 border-r border-purple-200 w-28">MAKE</th>
+                            <th className="p-2 border-r border-purple-200 w-24">Remarks</th>
+                            <th className="p-2 border-r border-purple-300 bg-purple-200 text-purple-900 w-28">SUPPLIER NAME</th>
+                            <th className="p-2 bg-purple-200 text-purple-900 w-24">SUPPLIER PO #</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {items.map((it, idx) => (
+                            <tr key={idx} className="hover:bg-purple-50/30">
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.sl_no || idx + 1}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.client_po_item_no || idx + 1}
+                              </td>
+                              <td className="p-2 border-r border-slate-200 text-left font-sans">
+                                {it.description}
+                              </td>
+                              <td className="p-2 text-center font-bold border-r border-slate-200">
+                                {it.qty}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200">
+                                {it.uom}
+                              </td>
+                              <td className="p-2 text-center font-mono font-bold text-red-700 border-r border-slate-200">
+                                {it.heat_number || '-'}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.certificate_number || '-'}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200">
+                                {it.make || '-'}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200 text-slate-700">
+                                {it.remarks || '-'}
+                              </td>
+                              <td className="p-2 text-center font-semibold text-purple-800 bg-purple-50/50 border-r border-slate-200">
+                                {it.supplier_name || 'DELCORTE SAS'}
+                              </td>
+                              <td className="p-2 text-center font-mono text-purple-900 bg-purple-50/50">
+                                {it.supplier_po_number || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: CLIENT SUMMARY SHEET (9 COLUMNS) */}
+                {previewTab === 'client' && (
+                  <div className="space-y-4">
+                    <div className="text-center font-bold text-base tracking-wider border-b-2 border-teal-300 pb-2 text-teal-950">
+                      MSG OILFIELD - CLIENT SUMMARY SHEET
+                    </div>
+
+                    <div className="grid grid-cols-3 border border-slate-300 text-xs">
+                      <div className="col-span-2 p-3 space-y-1 font-bold border-r border-slate-300 text-slate-800">
+                        <div>Client : {clientName}</div>
+                        <div>PO Number: {poNumber}</div>
+                        <div>MSG Ref:   {msgRef || order.so_number}</div>
+                      </div>
+                      <div className="p-3 flex items-center justify-center bg-teal-50/50">
+                        <div className="text-center font-bold font-mono text-teal-700 tracking-wide">
+                          [ CLIENT PUBLICATION ]
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-300 rounded">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr className="bg-teal-100 font-bold border-b border-teal-200 text-teal-950 text-center">
+                            <th className="p-2 border-r border-teal-200 w-12">SL NO</th>
+                            <th className="p-2 border-r border-teal-200 w-24">CLIENT PO ITEM NO</th>
+                            <th className="p-2 border-r border-teal-200 text-left min-w-[240px]">Description</th>
+                            <th className="p-2 border-r border-teal-200 w-16">PO Qty</th>
+                            <th className="p-2 border-r border-teal-200 w-12">UOM</th>
+                            <th className="p-2 border-r border-teal-200 w-24">Heat Number</th>
+                            <th className="p-2 border-r border-teal-200 w-24">Certificate #</th>
+                            <th className="p-2 border-r border-teal-200 w-28">MAKE</th>
+                            <th className="p-2 w-28">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {items.map((it, idx) => (
+                            <tr key={idx} className="hover:bg-teal-50/30">
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.sl_no || idx + 1}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.client_po_item_no || idx + 1}
+                              </td>
+                              <td className="p-2 border-r border-slate-200 text-left font-sans">
+                                {it.description}
+                              </td>
+                              <td className="p-2 text-center font-bold border-r border-slate-200">
+                                {it.qty}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200">
+                                {it.uom}
+                              </td>
+                              <td className="p-2 text-center font-mono font-bold text-red-700 border-r border-slate-200">
+                                {it.heat_number || '-'}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {it.certificate_number || '-'}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200">
+                                {it.make || '-'}
+                              </td>
+                              <td className="p-2 text-center text-slate-700">
+                                {it.remarks || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 4: CIPL COMMERCIAL INVOICE */}
+                {previewTab === 'cipl_invoice' && (() => {
+                  const totalQty = items.reduce((sum, it) => sum + (it.qty || 1), 0)
+                  const totalAmt = items.reduce((sum, it) => sum + (it.qty || 1) * (it.unit_price || 125), 0)
+                  return (
+                    <div className="space-y-4">
+                      {/* Company Header */}
+                      <div className="text-center space-y-0.5 border-b-2 border-blue-600 pb-3">
+                        <h3 className="font-extrabold text-sm text-slate-900 tracking-wide">
+                          M.S.G OILFIELD EQUIPMENT TRADING L.L.C
+                        </h3>
+                        <p className="text-[10px] text-slate-600">
+                          P.O. Box: 93310, Dubai - United Arab Emirates | TRN: 100346882200003
+                        </p>
+                        <h4 className="font-bold text-xs text-blue-900 underline pt-1">
+                          COMMERCIAL INVOICE
+                        </h4>
+                      </div>
+
+                      {/* Metadata Grid */}
+                      <div className="grid grid-cols-2 gap-4 border border-slate-300 p-3 text-[11px] bg-slate-50/50">
+                        <div className="space-y-1">
+                          <div><span className="font-bold text-slate-700">Invoice To (Buyer):</span> <span className="font-semibold text-slate-900">{clientName}</span></div>
+                          <div><span className="font-bold text-slate-700">Port of Loading:</span> Jebel Ali Port, UAE</div>
+                          <div><span className="font-bold text-slate-700">Port of Discharge:</span> Khalifa Bin Salman Port, Bahrain</div>
+                          <div><span className="font-bold text-slate-700">Vessel / Carrier:</span> MAERSK LINE / SEA FREIGHT</div>
+                        </div>
+                        <div className="space-y-1 sm:text-right">
+                          <div><span className="font-bold text-slate-700">Invoice No:</span> <span className="font-mono font-bold text-blue-900">{`INV-MSG-${order.so_number.replace(/[^0-9]/g, '').slice(-4) || '2026'}-CI`}</span></div>
+                          <div><span className="font-bold text-slate-700">Invoice Date:</span> {orderDate}</div>
+                          <div><span className="font-bold text-slate-700">Customer PO Ref:</span> <span className="font-mono font-bold">{poNumber}</span></div>
+                          <div><span className="font-bold text-slate-700">Currency / Terms:</span> {currency} / 30 Days Net from Delivery</div>
+                        </div>
+                      </div>
+
+                      {/* Invoice Table */}
+                      <div className="overflow-x-auto border border-slate-300 rounded">
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="bg-blue-100 font-bold border-b border-blue-200 text-blue-950 text-center">
+                              <th className="p-2 border-r border-blue-200 w-12">Item #</th>
+                              <th className="p-2 border-r border-blue-200 w-20">Client Ref</th>
+                              <th className="p-2 border-r border-blue-200 text-left min-w-[240px]">Description of Goods</th>
+                              <th className="p-2 border-r border-blue-200 w-20">HS Code</th>
+                              <th className="p-2 border-r border-blue-200 w-18">Origin</th>
+                              <th className="p-2 border-r border-blue-200 w-14">Qty</th>
+                              <th className="p-2 border-r border-blue-200 w-12">UOM</th>
+                              <th className="p-2 border-r border-blue-200 w-20 text-right">Unit Rate ({currency})</th>
+                              <th className="p-2 w-24 text-right">Amount ({currency})</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {items.map((it, idx) => {
+                              const q = it.qty || 1
+                              const rate = it.unit_price || 125
+                              const amt = q * rate
+                              return (
+                                <tr key={idx} className="hover:bg-blue-50/20">
+                                  <td className="p-2 text-center font-mono border-r border-slate-200">{idx + 1}</td>
+                                  <td className="p-2 text-center font-mono border-r border-slate-200">{it.client_po_item_no || idx + 1}</td>
+                                  <td className="p-2 border-r border-slate-200 text-left">{it.description}</td>
+                                  <td className="p-2 text-center font-mono border-r border-slate-200">{it.hs_code || '7307.93.00'}</td>
+                                  <td className="p-2 text-center border-r border-slate-200">{it.country_of_origin || 'Italy'}</td>
+                                  <td className="p-2 text-center font-bold border-r border-slate-200">{q}</td>
+                                  <td className="p-2 text-center border-r border-slate-200">{it.uom}</td>
+                                  <td className="p-2 text-right font-mono border-r border-slate-200">{rate.toFixed(2)}</td>
+                                  <td className="p-2 text-right font-mono font-bold">{amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                              )
+                            })}
+                            <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
+                              <td colSpan={5} className="p-2 text-right uppercase">Total:</td>
+                              <td className="p-2 text-center font-mono">{totalQty}</td>
+                              <td className="p-2 text-center">Ea</td>
+                              <td className="p-2 text-right">-</td>
+                              <td className="p-2 text-right font-mono text-blue-900">{currency} {totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="p-3 bg-blue-50/50 border border-blue-200 rounded text-xs">
+                        <span className="font-bold text-slate-700">Amount in Words: </span>
+                        <span className="font-semibold text-blue-950 uppercase">{numToWords(totalAmt)} {currency === 'USD' ? 'US DOLLARS' : 'UAE DIRHAMS'} ONLY</span>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* TAB 5: CIPL PACKING LIST */}
+                {previewTab === 'cipl_packing' && (() => {
+                  const totalQty = items.reduce((sum, it) => sum + (it.qty || 1), 0)
+                  const totalNetWt = items.reduce((sum, it) => sum + (it.total_net_weight_kg || (it.unit_weight_kg * (it.qty || 1))), 0)
+                  const totalGrossWt = items.reduce((sum, it) => sum + (it.total_gross_weight_kg || (it.unit_weight_kg * (it.qty || 1) * 1.05)), 0)
+                  const distinctPkgs = new Set(items.map(it => `${it.package_type || 'Pallet'} ${it.package_no || '1'}`)).size
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Company Header */}
+                      <div className="text-center space-y-0.5 border-b-2 border-sky-600 pb-3">
+                        <h3 className="font-extrabold text-sm text-slate-900 tracking-wide">
+                          M.S.G OILFIELD EQUIPMENT TRADING L.L.C
+                        </h3>
+                        <p className="text-[10px] text-slate-600">
+                          P.O. Box: 93310, Dubai - United Arab Emirates | Logistics &amp; Packing Department
+                        </p>
+                        <h4 className="font-bold text-xs text-sky-900 underline pt-1">
+                          COMMERCIAL PACKING LIST
+                        </h4>
+                      </div>
+
+                      {/* Metadata Grid */}
+                      <div className="grid grid-cols-2 gap-4 border border-slate-300 p-3 text-[11px] bg-slate-50/50">
+                        <div className="space-y-1">
+                          <div><span className="font-bold text-slate-700">Consignee:</span> <span className="font-semibold text-slate-900">{clientName}</span></div>
+                          <div><span className="font-bold text-slate-700">Port of Loading:</span> Jebel Ali Port, UAE</div>
+                          <div><span className="font-bold text-slate-700">Port of Discharge:</span> Khalifa Bin Salman Port, Bahrain</div>
+                        </div>
+                        <div className="space-y-1 sm:text-right">
+                          <div><span className="font-bold text-slate-700">Packing List Ref:</span> <span className="font-mono font-bold text-sky-900">{`PL-MSG-${order.so_number.replace(/[^0-9]/g, '').slice(-4) || '2026'}`}</span></div>
+                          <div><span className="font-bold text-slate-700">Packing Date:</span> {orderDate}</div>
+                          <div><span className="font-bold text-slate-700">Total Packages:</span> <span className="font-bold text-sky-950">{distinctPkgs} Package(s)</span></div>
+                        </div>
+                      </div>
+
+                      {/* Packing Table */}
+                      <div className="overflow-x-auto border border-slate-300 rounded">
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="bg-sky-100 font-bold border-b border-sky-200 text-sky-950 text-center">
+                              <th className="p-2 border-r border-sky-200 w-16">Pkg #</th>
+                              <th className="p-2 border-r border-sky-200 w-20">Pkg Type</th>
+                              <th className="p-2 border-r border-sky-200 w-12">Item #</th>
+                              <th className="p-2 border-r border-sky-200 text-left min-w-[200px]">Description of Goods</th>
+                              <th className="p-2 border-r border-sky-200 w-14">Qty</th>
+                              <th className="p-2 border-r border-sky-200 w-12">UOM</th>
+                              <th className="p-2 border-r border-sky-200 w-24">Dimensions (CM)</th>
+                              <th className="p-2 border-r border-sky-200 w-18 text-right">Unit Wt (KG)</th>
+                              <th className="p-2 border-r border-sky-200 w-20 text-right">Net Wt (KG)</th>
+                              <th className="p-2 w-20 text-right">Gross Wt (KG)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {items.map((it, idx) => {
+                              const q = it.qty || 1
+                              const uWt = it.unit_weight_kg || estimateUnitWeight(it.description, it.uom)
+                              const nWt = it.total_net_weight_kg || Math.round(uWt * q * 100) / 100
+                              const gWt = it.total_gross_weight_kg || Math.round(nWt * 1.05 * 100) / 100
+                              const dims = it.package_no === '1' ? '120 X 80 X 100' : '100 X 80 X 80'
+                              return (
+                                <tr key={idx} className="hover:bg-sky-50/20">
+                                  <td className="p-2 text-center font-mono font-bold text-sky-900 border-r border-slate-200">{it.package_no || '1'}</td>
+                                  <td className="p-2 text-center font-semibold border-r border-slate-200">{it.package_type || 'Pallet'}</td>
+                                  <td className="p-2 text-center font-mono border-r border-slate-200">{idx + 1}</td>
+                                  <td className="p-2 border-r border-slate-200 text-left">{it.description}</td>
+                                  <td className="p-2 text-center font-bold border-r border-slate-200">{q}</td>
+                                  <td className="p-2 text-center border-r border-slate-200">{it.uom}</td>
+                                  <td className="p-2 text-center font-mono border-r border-slate-200">{dims}</td>
+                                  <td className="p-2 text-right font-mono border-r border-slate-200">{uWt.toFixed(2)}</td>
+                                  <td className="p-2 text-right font-mono border-r border-slate-200">{nWt.toFixed(2)}</td>
+                                  <td className="p-2 text-right font-mono font-bold">{gWt.toFixed(2)}</td>
+                                </tr>
+                              )
+                            })}
+                            <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
+                              <td colSpan={4} className="p-2 text-right uppercase">Grand Totals:</td>
+                              <td className="p-2 text-center font-mono">{totalQty}</td>
+                              <td className="p-2 text-center">Ea</td>
+                              <td className="p-2 text-center">-</td>
+                              <td className="p-2 text-right">-</td>
+                              <td className="p-2 text-right font-mono">{totalNetWt.toFixed(2)} KG</td>
+                              <td className="p-2 text-right font-mono text-sky-900">{totalGrossWt.toFixed(2)} KG</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })()}
 
               </div>
             </div>
 
-            <div className="px-5 py-3 bg-white border-t border-slate-200 flex justify-between items-center">
-              <span className="text-xs text-slate-500">
-                Exact layout mirroring publication standard template.
-              </span>
-              <div className="flex space-x-2">
+            {/* Modal Footer with Direct Actions */}
+            <div className="px-5 py-3.5 bg-white border-t border-slate-200 flex flex-wrap justify-between items-center gap-3">
+              <div className="flex items-center space-x-2 text-xs text-slate-500">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span>Publication quality live Excel layout ready for export.</span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowPreviewModal(false)}
-                  className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   Close Preview
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPreviewModal(false)
-                    handleDownloadSummarySheet()
-                  }}
-                  className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download Excel (.xlsx)</span>
-                </button>
+
+                {/* Dynamic Download for Currently Active Tab */}
+                {previewTab === 'summary' && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadSummarySheet}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Summary Sheet (.xlsx)</span>
+                  </button>
+                )}
+
+                {previewTab === 'stores' && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadStoresSummary}
+                    className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Stores Sheet (.xlsx)</span>
+                  </button>
+                )}
+
+                {previewTab === 'client' && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadClientSummary}
+                    className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Client Summary (.xlsx)</span>
+                  </button>
+                )}
+
+                {(previewTab === 'cipl_invoice' || previewTab === 'cipl_packing') && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadCIPL}
+                    className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download CIPL Workbook (.xlsx)</span>
+                  </button>
+                )}
               </div>
             </div>
+
           </div>
         </div>
       )}
