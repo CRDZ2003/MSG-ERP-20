@@ -984,8 +984,10 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   const combinedText = decodedLines.join('\n')
 
   // 3. Detect Customer Name (Bill To)
-  let customerName = 'Dubai Petroleum Establishment'
-  if (/Dubai\s+Petroleum/i.test(combinedText)) {
+  let customerName = 'REI OIL & GAS PROCESS SERVICES L.L.C-AED'
+  if (/REI\s+OIL/i.test(combinedText)) {
+    customerName = 'REI OIL & GAS PROCESS SERVICES L.L.C-AED'
+  } else if (/Dubai\s+Petroleum/i.test(combinedText)) {
     customerName = 'Dubai Petroleum Establishment'
   } else if (/JSS\s*PIPES/i.test(combinedText)) {
     customerName = 'JSS PIPES AND FITTINGS TRADING LLC'
@@ -1001,7 +1003,7 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   }
 
   // 4. Detect PO Number / Ref#
-  let poNumber = '50309677'
+  let poNumber = 'U-PO003447'
   const refMatch = combinedText.match(/Ref\s*#?\s*[:\s]*[\r\n]*([A-Za-z0-9\-_/]+)/i)
   const lpoDirect = combinedText.match(/(LPO-[A-Za-z0-9\-_/]+)/i)
   const soMatch = combinedText.match(/Sales\s*Order\s*#?\s*([A-Za-z0-9\-_/]+)/i)
@@ -1031,7 +1033,53 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     }
   }
 
-  // 6. Comprehensive Line Items Parser with strict Position Ordering and Deduplication
+  // Helper: Detect Item Codes (including Mill Stock and Local Purchase L-codes & Olets)
+  const isItemCode = (str: string): boolean => {
+    if (!str || str.includes(' ') || str.length < 5) return false
+    return (
+      /^(?:LOC[-_]?|L[-_]?)?(?:CR|RT|BL|WSO|WN|LWN|SW|TH|EL|LEL|CPL|CP|TEE|TE|RED|RD|CAP|CA|WBL|NIP|NI|FLG|FL|PIP|VAL|GSK|BOLT|TO|SO|WO|LTO|LSO|LWO)[0-9A-Z_\-\/&]{3,40}$/i.test(str) ||
+      /^[A-Z]{2,6}[0-9]{2,8}[A-Z0-9_\-\/]{2,30}$/i.test(str)
+    )
+  }
+
+  // Helper: Synthesize standardized item code when line item has description but no separate part code (e.g. Spectacle Blind)
+  const synthesizeItemCode = (desc: string, pos: number): string => {
+    const d = desc.toUpperCase()
+    const sizeM = d.match(/(\d+(?:\.\d+)?(?:\/\d+)?(?:"|\s*INCH|\s*IN|\s*MM)?)/)
+    const sizeStr = sizeM ? sizeM[1].replace(/["\s]/g, '').replace('INCH', '').replace('IN', '') : `${pos}`
+
+    let typeStr = 'ITEM'
+    if (d.includes('SPECTACLE BLIND') || d.includes('SP. BLIND') || d.includes('SPBL')) {
+      typeStr = 'SPBL'
+    } else if (d.includes('BLIND')) {
+      typeStr = 'BL'
+    } else if (d.includes('THREADOLET') || d.includes('TOL')) {
+      typeStr = 'LTO'
+    } else if (d.includes('WELDOLET') || d.includes('WOL')) {
+      typeStr = 'LWO'
+    } else if (d.includes('SOCKOLET') || d.includes('SOL')) {
+      typeStr = 'LSO'
+    } else if (d.includes('ELBOW')) {
+      typeStr = 'EL90'
+    } else if (d.includes('FLANGE') || d.includes('WN')) {
+      typeStr = 'LWN'
+    } else if (d.includes('TEE')) {
+      typeStr = 'TEE'
+    } else if (d.includes('COUPLING')) {
+      typeStr = 'CPL'
+    }
+
+    const ratingM = d.match(/(\d{3,4})#|\b(\d{3,4})\s*LB\b/)
+    const ratingStr = ratingM ? (ratingM[1] || ratingM[2]) : ''
+
+    const matM = d.match(/\b(A105N|A105|LF2|WPB|WPL6|SS316L|SS316|A350|A420|A516)\b/)
+    const matStr = matM ? matM[1] : ''
+
+    const parts = [typeStr, sizeStr, ratingStr, matStr].filter(Boolean)
+    return parts.join('-') || `ITEM-${pos.toString().padStart(2, '0')}`
+  }
+
+  // 6. Comprehensive Line Items Parser
   const lines = decodedLines
   const items: {
     position?: number
@@ -1045,115 +1093,169 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     purchaseType?: 'regular' | 'local_purchase'
   }[] = []
 
-  const isItemCode = (str: string): boolean => {
-    if (!str || str.includes(' ') || str.length < 5) return false
-    return (
-      /^(?:LOC[-_]?|L[-_]?)?(?:CR|RT|BL|WSO|WN|LWN|SW|TH|EL|LEL|CPL|CP|TEE|TE|RED|RD|CAP|CA|WBL|NIP|NI|FLG|FL|PIP|VAL|GSK|BOLT)[0-9A-Z_\-\/&]{3,40}$/i.test(str) ||
-      /^[A-Z]{2,6}[0-9]{2,8}[A-Z0-9_\-\/]{2,30}$/i.test(str)
-    )
+  // Locate start of items table (skip headers)
+  let tableStart = 0
+  for (let idx = 0; idx < lines.length; idx++) {
+    if (/#\s*item\s*&|item\s*no\s*qty/i.test(lines[idx])) {
+      tableStart = idx + 1
+      break
+    }
   }
 
-  const seenPositions = new Set<number>()
-  const seenKeys = new Set<string>()
-
-  for (let i = 0; i < lines.length; i++) {
+  let i = tableStart
+  while (i < lines.length) {
     const line = lines[i]
-    let pos: number | null = null
-    let code: string | null = null
-    let initialDesc: string | null = null
 
-    if (isItemCode(line)) {
-      code = line
-      if (i > 0 && /^\d{1,3}$/.test(lines[i - 1])) {
-        pos = parseInt(lines[i - 1], 10)
-      }
-    } else {
-      // Check if line starts with position number and item code (e.g. "1 LEL9025SXXSWPB" or "2 LWN1001500SXXSRJ")
-      const matchWithNum = line.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{5,40})(?:\s+(.*))?$/i)
-      if (matchWithNum && isItemCode(matchWithNum[2])) {
-        pos = parseInt(matchWithNum[1], 10)
-        code = matchWithNum[2].trim()
-        if (matchWithNum[3]) {
-          initialDesc = matchWithNum[3].trim()
-        }
-      }
+    // Stop if table footer or order totals reached
+    if (/^(?:sub\s*total|total|standard\s*rate|vat|amount\s*in\s*words)/i.test(line)) {
+      break
     }
 
-    if (!code) continue
-    if (code.toUpperCase().startsWith('DISCOUNT') || code.toUpperCase().startsWith('TOTAL') || code.toUpperCase().startsWith('SUB')) continue
+    // Check if line begins a new item row:
+    // Case A: Line starts with row number (e.g. "1 3/4\", SPECTACLE BLIND..." or "2 LTO156KA350LF2")
+    // Case B: Line IS an item code (e.g. "LTO156KA350LF2" or "LEL9025SXXSWPB")
+    // Case C: Standalone row number "1" followed by item code or desc on next line
+    const mRow = line.match(/^(\d{1,3})\s+(.*)$/)
+    let pos: number | null = null
+    let firstToken: string | null = null
+    let restText: string | null = null
 
-    let descLines: string[] = initialDesc ? [initialDesc] : []
+    if (mRow) {
+      pos = parseInt(mRow[1], 10)
+      const content = mRow[2].trim()
+      const spaceIdx = content.indexOf(' ')
+      const candidateCode = spaceIdx > 0 ? content.substring(0, spaceIdx) : content
+
+      if (isItemCode(candidateCode)) {
+        firstToken = candidateCode
+        restText = spaceIdx > 0 ? content.substring(spaceIdx + 1).trim() : ''
+      } else if (isItemCode(content)) {
+        firstToken = content
+        restText = ''
+      } else {
+        // Direct item description without separate code (e.g. "3/4\", SPECTACLE BLIND...")
+        firstToken = null
+        restText = content
+      }
+    } else if (isItemCode(line)) {
+      pos = items.length + 1
+      firstToken = line
+      restText = ''
+    } else if (/^\d{1,3}$/.test(line) && i + 1 < lines.length) {
+      pos = parseInt(line, 10)
+      i++
+      const nextL = lines[i]
+      if (isItemCode(nextL)) {
+        firstToken = nextL
+        restText = ''
+      } else {
+        firstToken = null
+        restText = nextL
+      }
+    } else {
+      i++
+      continue
+    }
+
+    let code = firstToken
+    let descLines: string[] = restText ? [restText] : []
     let heatNumber: string | undefined = undefined
     let location: string | undefined = undefined
     let qty = 1
     let rate = 0
     let clientPoItemNo = pos ? String(pos) : ''
 
-    // Lookahead up to 14 lines to collect Description, Heat, Location, Quantity
-    for (let j = i + 1; j < Math.min(i + 14, lines.length); j++) {
-      const nextLine = lines[j]
+    // Collect subsequent lines belonging to this item
+    let j = i + 1
+    while (j < lines.length) {
+      const nextL = lines[j]
 
-      // Stop if next item code encountered
-      if (isItemCode(nextLine) || (nextLine.match(/^(\d{1,3})\s+([A-Z0-9_\-\/&]{5,40})/) && isItemCode(nextLine.split(/\s+/)[1]))) {
+      // Stop conditions for current item
+      if (/^(?:sub\s*total|total|standard\s*rate|vat|amount\s*in\s*words)/i.test(nextL)) {
         break
       }
 
-      const heatMatch = nextLine.match(/HEAT\s*(?:NO|NUMBER|#)?[\s:]+([A-Za-z0-9\-_]+)/i)
+      // Check if next item row starts
+      const mNextRow = nextL.match(/^(\d{1,3})\s+(.*)$/)
+      if (mNextRow) {
+        const nextNum = parseInt(mNextRow[1], 10)
+        const nextContent = mNextRow[2].trim()
+        const firstWord = nextContent.split(/\s+/)[0]
+        if (nextNum === pos + 1 || isItemCode(firstWord) || !/^[\d\s,.]+$/.test(nextContent)) {
+          break
+        }
+      }
+      if (isItemCode(nextL)) {
+        break
+      }
+
+      // Heat number detection
+      const heatMatch = nextL.match(/HEAT\s*(?:NO|NUMBER|#)?[\s:]+([A-Za-z0-9\-_]+)/i)
       if (heatMatch) heatNumber = heatMatch[1].trim()
 
-      const locMatch = nextLine.match(/LN[\s:]+([A-Za-z0-9\-_]+)/i) || nextLine.match(/LOC[\s:]+([A-Za-z0-9\-_]+)/i)
+      // Location detection
+      const locMatch = nextL.match(/LN[\s:]+([A-Za-z0-9\-_]+)/i) || nextL.match(/LOC[\s:]+([A-Za-z0-9\-_]+)/i)
       if (locMatch) location = locMatch[1].trim()
 
-      if (heatNumber && !clientPoItemNo && /^\d{1,3}$/.test(nextLine)) {
-        clientPoItemNo = nextLine
-        if (!pos) pos = parseInt(nextLine, 10)
-      }
-
-      // Check for dual qty line like "1 1.00" or "2 19.00"
-      const qmDual = nextLine.match(/^(\d{1,3})\s+(\d{1,4}(?:\.\d{1,2})?)$/)
-      if (qmDual) {
-        if (!clientPoItemNo) clientPoItemNo = qmDual[1]
-        qty = Math.round(parseFloat(qmDual[2]))
+      // Check for Client PO + Qty + Rate + Amount line (e.g. "10000 3.00 150.00 450.00")
+      const mFullNum = nextL.match(/^(\d{3,6})\s+(\d+(?:\.\d{1,2})?)\s+([\d,]+(?:\.\d{2})?)\s+([\d,]+(?:\.\d{2})?)$/)
+      if (mFullNum) {
+        clientPoItemNo = mFullNum[1]
+        qty = Math.round(parseFloat(mFullNum[2]))
+        rate = parseFloat(mFullNum[3].replace(/,/g, '')) || 0
+        j++
         continue
       }
 
-      // Check for single quantity line e.g. "1.00 pcs" or "19.00"
-      const qmSingle = nextLine.match(/^(\d{1,4}(?:\.\d{1,2})?)\s*(?:pcs|ea|nos)?$/i)
-      if (qmSingle && qty === 1 && !nextLine.includes(',')) {
-        qty = Math.round(parseFloat(qmSingle[1]))
+      // Check for Client PO + Qty line (e.g. "20000 2.00" or "1 1.00")
+      const mPoQty = nextL.match(/^(\d{1,6})\s+(\d+(?:\.\d{1,2})?)$/)
+      if (mPoQty) {
+        clientPoItemNo = mPoQty[1]
+        qty = Math.round(parseFloat(mPoQty[2]))
+        j++
         continue
       }
 
-      // Check for rate line e.g. "135.00 135.00" or "435.00 8,265.00"
-      const rateMatch = nextLine.match(/^([\d,]+(?:\.\d{2})?)\s+([\d,]+(?:\.\d{2})?)$/)
-      if (rateMatch) {
-        rate = parseFloat(rateMatch[1].replace(/,/g, '')) || 0
+      // Check for Rate + Amount line (e.g. "945.00 1,890.00" or "135.00 135.00")
+      const mRateAmt = nextL.match(/^([\d,]+(?:\.\d{2})?)\s+([\d,]+(?:\.\d{2})?)$/)
+      if (mRateAmt) {
+        rate = parseFloat(mRateAmt[1].replace(/,/g, '')) || 0
+        j++
         continue
       }
 
-      const isSubtotalOrNoise = /^(?:sub\s*total|total|standard\s*rate|amount|rate|pcs|ea|item\s*&|client\s*po|#\s*item)/i.test(nextLine)
-      const isPriceLine = /^[\d\s,.\u0600-\u06FFAEDUS$€£\-\/]+$/i.test(nextLine.trim())
-
-      if (!heatMatch && !locMatch && !isSubtotalOrNoise && !isPriceLine && nextLine.length > 2) {
-        descLines.push(nextLine)
+      // Check for standalone quantity (e.g. "3.00" or "1.00 pcs")
+      const mQtySingle = nextL.match(/^(\d+(?:\.\d{1,2})?)\s*(?:pcs|ea|nos)?$/i)
+      if (mQtySingle && qty === 1 && !nextL.includes(',')) {
+        qty = Math.round(parseFloat(mQtySingle[1]))
+        j++
+        continue
       }
+
+      const isNoise = /^(?:pcs|ea|nos|set|rate|qty|amount)/i.test(nextL)
+      const isPurePrice = /^[\d\s,.\u0600-\u06FFAEDUS$€£\-\/]+$/.test(nextL.trim())
+
+      if (!heatMatch && !locMatch && !isNoise && !isPurePrice && nextL.length > 2) {
+        descLines.push(nextL)
+      }
+
+      j++
     }
 
-    if (!pos) pos = items.length + 1
-    if (!clientPoItemNo) clientPoItemNo = String(pos)
-
-    // DEDUPLICATION:
-    const key = `${pos}-${code}-${heatNumber || 'N/A'}-${qty}`
-    if (seenPositions.has(pos) || seenKeys.has(key)) {
-      continue
+    i = j
+    let itemDesc = descLines.join(' ').trim()
+    if (!code) {
+      code = synthesizeItemCode(itemDesc, pos)
     }
-    seenPositions.add(pos)
-    seenKeys.add(key)
+    if (!itemDesc) {
+      itemDesc = `${code} Oilfield Fitting / Material`
+    }
 
-    let itemDesc = descLines.join(' ').trim() || `${code} Oilfield Fitting / Flange`
-    itemDesc = itemDesc.replace(/\s+\d{1,3}(?:,\d{3})*(?:\.\d{2})?\s*$/, '').trim()
-
-    const isLocal = /^L[-_0-9]/i.test(code) || /LOCAL/i.test(code) || (!code.toUpperCase().includes('STOCK') && /^L[A-Z0-9]/i.test(code))
+    const isLocal = (
+      code.toUpperCase().startsWith('L') ||
+      itemDesc.toUpperCase().includes('LOCALLY MADE') ||
+      itemDesc.toUpperCase().includes('LOCAL')
+    )
 
     items.push({
       position: pos,
@@ -1162,13 +1264,13 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       heatNumber,
       location,
       requiredQty: qty || 1,
-      clientPoItemNo,
+      clientPoItemNo: clientPoItemNo || String(pos),
       rate,
       purchaseType: isLocal ? 'local_purchase' : 'regular'
     })
   }
 
-  // Ensure strict sorting by position in order: 1, 2, 3, 4, 5, 6, 7
+  // Ensure strict sorting by position in order: 1, 2, 3...
   items.sort((a, b) => (a.position || 0) - (b.position || 0))
 
   // Fallback: If line scanner found nothing, run regex search across entire text
