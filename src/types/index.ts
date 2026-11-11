@@ -101,6 +101,8 @@ export interface SalesOrderItem {
   position?: number
   supplier_name?: string
   supplier_po_number?: string
+  package_type?: string
+  package_no?: string
   required_qty: number
   allocated_qty: number
   dispatched_qty: number

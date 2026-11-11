@@ -5,6 +5,7 @@ import { PDFDocument, rgb, StandardFonts, degrees, decodePDFRawStream, PDFRawStr
 import JSZip from 'jszip'
 import { getUploadedCertificateBytes } from './zipExtractor'
 import { SalesOrder } from '../types'
+import { autoDetectMake, autoDetectSupplier } from './sourcingEngine'
 
 export interface StampOptions {
   poNo: string
@@ -833,6 +834,10 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     clientPoItemNo?: string
     rate?: number
     purchaseType?: 'regular' | 'local_purchase'
+    make?: string
+    supplierName?: string
+    packageType?: string
+    packageNo?: string
   }[]
   pdfBlobUrl: string
   fileName: string
@@ -1098,6 +1103,10 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     clientPoItemNo?: string
     rate?: number
     purchaseType?: 'regular' | 'local_purchase'
+    make?: string
+    supplierName?: string
+    packageType?: string
+    packageNo?: string
   }[] = []
 
   let i = 0
@@ -1298,6 +1307,9 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       itemDesc.toUpperCase().includes('LOCAL')
     )
 
+    const detectedMake = autoDetectMake(itemDesc) || (pos === 1 ? 'DELCORTE, FRANCE' : 'BENKAN, THAILAND')
+    const detectedSupplier = isLocal ? 'LOCAL UAE SUPPLIER' : autoDetectSupplier(detectedMake, itemDesc)
+
     items.push({
       position: pos || items.length + 1,
       itemCode: code,
@@ -1307,7 +1319,11 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       requiredQty: qty || 1,
       clientPoItemNo: clientPoItemNo || String(pos || items.length + 1),
       rate,
-      purchaseType: isLocal ? 'local_purchase' : 'regular'
+      purchaseType: isLocal ? 'local_purchase' : 'regular',
+      make: detectedMake,
+      supplierName: detectedSupplier,
+      packageType: 'Pallet',
+      packageNo: `${Math.floor(items.length / 3) + 1}`
     })
   }
 
@@ -1323,13 +1339,20 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       if (!seen.has(c) && c.length >= 6) {
         seen.add(c)
         const pos = items.length + 1
+        const desc = `Oilfield Material ${c} ASME B16.9 / B16.5`
+        const mMake = autoDetectMake(desc) || 'BENKAN, THAILAND'
+        const isLoc = /^L/i.test(c)
         items.push({
           position: pos,
           clientPoItemNo: String(pos),
           itemCode: c,
-          itemDescription: `Oilfield Material ${c} ASME B16.9 / B16.5`,
+          itemDescription: desc,
           requiredQty: 1,
-          purchaseType: /^L/i.test(c) ? 'local_purchase' : 'regular'
+          purchaseType: isLoc ? 'local_purchase' : 'regular',
+          make: mMake,
+          supplierName: isLoc ? 'LOCAL UAE SUPPLIER' : autoDetectSupplier(mMake, desc),
+          packageType: 'Pallet',
+          packageNo: `${Math.floor(items.length / 3) + 1}`
         })
       }
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   X,
   FileSpreadsheet,
@@ -13,8 +13,8 @@ import {
   Layers,
   Building,
   CheckCircle2,
-  AlertCircle,
-  HelpCircle,
+  Package,
+  Box,
 } from 'lucide-react'
 import { SalesOrder, SalesOrderItem } from '../../types'
 import { db } from '../../services/db'
@@ -26,6 +26,7 @@ import {
   generateStoresSummaryExcel,
   generateCIPLLogisticExcel,
   autoDetectMake,
+  autoDetectSupplier,
   autoDetectCountryOfOrigin,
   autoDetectHSCode,
   estimateUnitWeight,
@@ -68,9 +69,6 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
   const [msgRef, setMsgRef] = useState(order.msg_ref || order.so_number || '')
   const [orderDate, setOrderDate] = useState(order.order_date || new Date().toISOString().substring(0, 10))
   const [currency, setCurrency] = useState<'USD' | 'AED'>('USD')
-  const [bapcoTransmittal, setBapcoTransmittal] = useState(
-    order.bapco_transmittal || (order.customer_name?.toUpperCase().includes('STS') ? 'TRA-STS-BAP-0157' : '')
-  )
 
   // Items State
   const masterStock = db.getMasterStockView()
@@ -80,6 +78,9 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
     const heat = alloc?.heat_number || item.heat_number || lot?.heat_number || ''
     const cert = item.certificate_number || (lot as any)?.certificate_reference || ''
     const make = item.make || autoDetectMake(item.item_description) || (idx === 0 ? 'DELCORTE, FRANCE' : 'BENKAN, THAILAND')
+    const supp = item.supplier_name || lot?.supplier_name || autoDetectSupplier(make, item.item_description || '')
+    const pkgType = item.package_type || 'Pallet'
+    const pkgNo = item.package_no || '1'
     const hs = autoDetectHSCode(item.item_description)
     const origin = autoDetectCountryOfOrigin(make, item.item_description)
     const qty = alloc?.allocated_qty || item.required_qty || 1
@@ -102,7 +103,7 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
       certificate_number: cert,
       make,
       remarks: cleanRemarks,
-      supplier_name: item.supplier_name || lot?.supplier_name || (make ? make.split(',')[0].trim() : 'BENKAN CORP'),
+      supplier_name: supp,
       supplier_po_number: (item as any).supplier_po_number || `MSG-PO-${(order.so_number || '2026').replace(/[^0-9]/g, '').slice(-4) || '1844'}`,
       hs_code: hs,
       country_of_origin: origin,
@@ -111,7 +112,8 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
       unit_weight_kg: unitWeight,
       total_net_weight_kg: unitWeight * qty,
       total_gross_weight_kg: unitWeight * qty * 1.05,
-      package_no: `BOX-${Math.floor(idx / 3) + 1}`,
+      package_type: pkgType,
+      package_no: pkgNo,
       is_machined: false,
     }
   })
@@ -129,6 +131,8 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
   const [bulkMake, setBulkMake] = useState('')
   const [bulkHeat, setBulkHeat] = useState('')
   const [bulkCert, setBulkCert] = useState('')
+  const [bulkPkgType, setBulkPkgType] = useState('')
+  const [bulkPkgNo, setBulkPkgNo] = useState('')
 
   // Build current worksheet payload
   const buildCurrentPayload = (): SourcingWorksheetData => ({
@@ -136,7 +140,6 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
     client: clientName.trim(),
     po_number: poNumber.trim(),
     msg_ref: msgRef.trim() || order.so_number,
-    bapco_transmittal: bapcoTransmittal.trim(),
     order_date: orderDate,
     delivery_date: order.required_delivery_date,
     currency,
@@ -159,14 +162,30 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
     )
   }
 
+  // Quick packaging setter: All Pallet, All Box, All Crate
+  const handleSetAllPackaging = (pkgType: string) => {
+    const targetIds = selectedIds.length > 0 ? selectedIds : items.map(i => i.id)
+    setItems(prev =>
+      prev.map(it => {
+        if (!targetIds.includes(it.id)) return it
+        return {
+          ...it,
+          package_type: pkgType
+        }
+      })
+    )
+    setSuccessBanner(`Updated packaging to "${pkgType}" for ${targetIds.length} item(s)!`)
+    setTimeout(() => setSuccessBanner(null), 3000)
+  }
+
   // Bulk fill selected items
   const handleApplyBulkAllocation = () => {
     if (selectedIds.length === 0) {
       alert('Please select at least one item using the checkboxes on the left.')
       return
     }
-    if (!bulkSupplier && !bulkPO && !bulkMake && !bulkHeat && !bulkCert) {
-      alert('Please fill in at least one field (Supplier, PO#, Make, Heat, or Cert).')
+    if (!bulkSupplier && !bulkPO && !bulkMake && !bulkHeat && !bulkCert && !bulkPkgType && !bulkPkgNo) {
+      alert('Please fill in at least one field (Supplier, PO#, Make, Heat, Cert, Package Type, or Package #).')
       return
     }
 
@@ -180,6 +199,8 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
           make: bulkMake.trim() || it.make,
           heat_number: bulkHeat.trim() || it.heat_number,
           certificate_number: bulkCert.trim() || it.certificate_number,
+          package_type: bulkPkgType.trim() || it.package_type,
+          package_no: bulkPkgNo.trim() || it.package_no,
         }
       })
     )
@@ -204,6 +225,8 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
       remarks: it.remarks,
       supplier_name: it.supplier_name,
       supplier_po_number: it.supplier_po_number,
+      package_type: it.package_type || 'Pallet',
+      package_no: it.package_no || '1',
     }))
 
     const res = db.updateSalesOrder({
@@ -211,7 +234,6 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
       customer_name: clientName.trim(),
       po_number: poNumber.trim(),
       so_number: msgRef.trim() || order.so_number,
-      bapco_transmittal: bapcoTransmittal.trim(),
       items: updatedItemsPayload,
     })
 
@@ -417,7 +439,7 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="lg:col-span-2">
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">Client Name</label>
                 <input
@@ -464,26 +486,13 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                   <option value="AED">AED (AED - UAE Dirham)</option>
                 </select>
               </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1" title="BAPCO Approved Transmittal Number">
-                  BAPCO Transmittal #
-                </label>
-                <input
-                  type="text"
-                  value={bapcoTransmittal}
-                  onChange={e => setBapcoTransmittal(e.target.value)}
-                  placeholder="e.g. TRA-STS-BAP-0157 or blank"
-                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono text-slate-800 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                />
-              </div>
             </div>
           </div>
 
           {/* Quick Actions Bar */}
           <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center space-x-3">
-              <label className="inline-flex items-center space-x-2 font-bold text-slate-700 cursor-pointer">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <label className="inline-flex items-center space-x-2 font-bold text-slate-700 cursor-pointer mr-2">
                 <input
                   type="checkbox"
                   checked={items.length > 0 && selectedIds.length === items.length}
@@ -491,17 +500,51 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                   className="rounded text-orange-600 focus:ring-orange-500 h-4 w-4"
                 />
                 <span className="text-xs">
-                  Select All ({selectedIds.length} of {items.length} selected)
+                  Select All ({selectedIds.length} of {items.length})
                 </span>
               </label>
 
               <button
                 type="button"
                 onClick={() => setShowBulkToolbar(!showBulkToolbar)}
-                className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition-colors"
+                className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition-colors text-xs"
               >
                 <Building className="h-3.5 w-3.5 text-orange-600" />
-                <span>Supplier PO / Bulk Allocate</span>
+                <span>Supplier PO / Allocate</span>
+              </button>
+
+              <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+
+              <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">Set Packaging:</span>
+
+              <button
+                type="button"
+                onClick={() => handleSetAllPackaging('Pallet')}
+                className="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs transition-colors"
+                title="Set packaging to Pallet for selected items"
+              >
+                <Package className="h-3.5 w-3.5 text-sky-600" />
+                <span>All Pallet</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetAllPackaging('Box')}
+                className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs transition-colors"
+                title="Set packaging to Box for selected items"
+              >
+                <Box className="h-3.5 w-3.5 text-amber-600" />
+                <span>All Box</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetAllPackaging('Crate')}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs transition-colors"
+                title="Set packaging to Crate for selected items"
+              >
+                <Layers className="h-3.5 w-3.5 text-slate-600" />
+                <span>All Crate</span>
               </button>
             </div>
 
@@ -509,7 +552,7 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition-colors"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition-colors text-xs"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Add Row</span>
@@ -526,7 +569,7 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                     Bulk Allocate to {selectedIds.length} Selected Item(s):
                   </span>
                   <span className="text-[11px] text-orange-700">
-                    Enter details below and click Apply. Empty fields will leave existing values untouched.
+                    Fill in details and click Apply. Empty fields leave existing values untouched.
                   </span>
                 </div>
                 <button
@@ -537,7 +580,7 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
                 <div>
                   <label className="block text-[10px] font-bold text-orange-900 mb-0.5">Supplier Name</label>
                   <input
@@ -562,6 +605,33 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                     value={bulkPO}
                     onChange={e => setBulkPO(e.target.value)}
                     placeholder="e.g. MSG-PO-2227"
+                    className="w-full border border-orange-300 rounded px-2 py-1 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-900 mb-0.5">Package Type</label>
+                  <select
+                    value={bulkPkgType}
+                    onChange={e => setBulkPkgType(e.target.value)}
+                    className="w-full border border-orange-300 rounded px-2 py-1 text-xs bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="">(Keep Existing)</option>
+                    <option value="Pallet">Pallet</option>
+                    <option value="Box">Box</option>
+                    <option value="Crate">Crate</option>
+                    <option value="Wooden Box">W.Box</option>
+                    <option value="Carton">Carton</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-orange-900 mb-0.5">Package #</label>
+                  <input
+                    type="text"
+                    value={bulkPkgNo}
+                    onChange={e => setBulkPkgNo(e.target.value)}
+                    placeholder="e.g. 1"
                     className="w-full border border-orange-300 rounded px-2 py-1 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -632,6 +702,10 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                     <th className="p-2 min-w-[260px]">Description</th>
                     <th className="p-2 w-16 text-center">PO Qty</th>
                     <th className="p-2 w-14 text-center">UOM</th>
+                    <th className="p-2 w-36 bg-sky-900 text-white text-center border-b-2 border-sky-400">
+                      PACKAGING (CIPL)<br />
+                      <span className="text-[9px] font-normal opacity-90">Pallet / Box / #</span>
+                    </th>
                     <th className="p-2 w-28 text-center">Heat Number</th>
                     <th className="p-2 w-32">MAKE</th>
                     <th className="p-2 w-28 text-center">Certificate #</th>
@@ -705,6 +779,37 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                             }}
                             className="w-12 text-center font-mono text-xs border border-slate-300 rounded px-1 py-0.5"
                           />
+                        </td>
+                        <td className="p-2 bg-sky-50/50">
+                          <div className="flex items-center space-x-1 justify-center">
+                            <select
+                              value={it.package_type || 'Pallet'}
+                              onChange={e => {
+                                const updated = [...items]
+                                updated[idx].package_type = e.target.value
+                                setItems(updated)
+                              }}
+                              className="w-20 text-[11px] font-bold border border-sky-300 rounded px-1 py-0.5 bg-white text-sky-900 focus:ring-1 focus:ring-sky-500"
+                            >
+                              <option value="Pallet">Pallet</option>
+                              <option value="Box">Box</option>
+                              <option value="Crate">Crate</option>
+                              <option value="Wooden Box">W.Box</option>
+                              <option value="Carton">Carton</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={it.package_no || '1'}
+                              onChange={e => {
+                                const updated = [...items]
+                                updated[idx].package_no = e.target.value
+                                setItems(updated)
+                              }}
+                              placeholder="#"
+                              title="Pallet / Box Number"
+                              className="w-10 text-center font-mono font-bold text-[11px] border border-sky-300 rounded px-1 py-0.5 bg-white text-sky-900 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </div>
                         </td>
                         <td className="p-2 text-center">
                           <input
@@ -944,8 +1049,7 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                         <th className="p-1.5 border-r border-slate-300">Heat Number</th>
                         <th className="p-1.5 border-r border-slate-300">Make</th>
                         <th className="p-1.5 border-r border-slate-300">Certificate Number</th>
-                        <th className="p-1.5 border-r border-slate-300">Remarks</th>
-                        <th className="p-1.5">BAPCO APPROVED TRANSMITTAL NUMBER</th>
+                        <th className="p-1.5">Remarks</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -972,11 +1076,8 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                           <td className="p-1.5 text-center font-mono border-r border-slate-200">
                             {it.certificate_number || '-'}
                           </td>
-                          <td className="p-1.5 text-center border-r border-slate-200 text-slate-700">
+                          <td className="p-1.5 text-center text-slate-700">
                             {it.remarks || '-'}
-                          </td>
-                          <td className="p-1.5 text-center font-mono border-slate-200 text-slate-800">
-                            {bapcoTransmittal || (clientName.toUpperCase().includes('STS') ? 'TRA-STS-BAP-0157' : '-')}
                           </td>
                         </tr>
                       ))}

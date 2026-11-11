@@ -26,6 +26,7 @@ export interface SourcingLineItem {
   unit_weight_kg: number
   total_net_weight_kg: number
   total_gross_weight_kg: number
+  package_type?: string
   package_no: string
   is_machined?: boolean
   parent_sl_no?: number
@@ -95,6 +96,37 @@ export function autoDetectMake(rawText: string): string {
     if (pattern.test(rawText)) return makeVal
   }
   return ''
+}
+
+export function autoDetectSupplier(make: string = '', desc: string = '', lotSupplier?: string): string {
+  if (lotSupplier && lotSupplier.trim()) return lotSupplier.trim()
+  const text = `${make} ${desc}`.toUpperCase()
+  if (/\b(DELCORTE|JD[-_]?STOCK)\b/.test(text)) return 'DELCORTE SAS'
+  if (/\b(BENKAN|TK\b)/.test(text)) return 'BENKAN CORP'
+  if (/\b(MEGA)\b/.test(text)) return 'MEGA S.P.A.'
+  if (/\b(BOTHWELL|BOTH-WELL)\b/.test(text)) return 'BOTH-WELL STEEL'
+  if (/\b(ULMA)\b/.test(text)) return 'ULMA PIPING'
+  if (/\b(CHERO)\b/.test(text)) return 'CHERO PIPING S.P.A.'
+  if (/\b(BONNEY\s*FORGE)\b/.test(text)) return 'BONNEY FORGE USA'
+  if (/\b(PROMAT)\b/.test(text)) return 'PROMAT BD LTD'
+  if (/\b(OMSA)\b/.test(text)) return 'OMSA GERMANY'
+  if (/\b(WMASS|WMAASS)\b/.test(text)) return 'WMASS GERMANY'
+  if (/\b(ST&H|STH)\b/.test(text)) return 'ST&H KOREA'
+  if (/\b(MELESI)\b/.test(text)) return 'OFFICINE AMBROGIO MELESI'
+  if (/\b(METALFAR|MFF)\b/.test(text)) return 'METALFAR PRODOTTI INDUSTRIALI'
+  if (/\b(RACCORTUBI)\b/.test(text)) return 'RACCORTUBI S.P.A.'
+  if (/\b(KITZ)\b/.test(text)) return 'KITZ CORP'
+  if (/\b(VALVEWORKS)\b/.test(text)) return 'VALVEWORKS USA'
+  if (/\b(SEGYUNG)\b/.test(text)) return 'SEGYUNG HEAVY INDUSTRIES'
+  if (/\b(LOCALLY|LOCAL|FABRICATED|MODIFIED)\b/.test(text)) return 'LOCAL UAE SUPPLIER'
+  
+  if (make && make.trim()) {
+    const cleanMake = make.split(',')[0].replace(/\b(FRANCE|ITALY|GERMANY|SPAIN|KOREA|THAILAND|USA|UK|TAIWAN|JAPAN)\b/gi, '').trim()
+    if (cleanMake) return cleanMake.toUpperCase()
+  }
+
+  if (/\b(FLANGE|WN|BLIND)\b/.test(text)) return 'ULMA PIPING'
+  return 'BENKAN CORP'
 }
 
 export function autoDetectCountryOfOrigin(make: string = '', desc: string = '', remarks: string = ''): string {
@@ -677,15 +709,17 @@ export async function generateCIPLLogisticWorkbook(data: SourcingWorksheetData):
     const rateVal = it.unit_price || 25.0
     const amtVal = it.total_price || (qtyVal * rateVal)
 
-    let pkgType = (it.package_no || 'CARTON BOX').toUpperCase()
-    if (pkgType.includes('PALLET')) pkgType = 'PALLET'
-    else if (pkgType.includes('CRATE')) pkgType = 'WOODEN CRATE'
-    else pkgType = 'CARTON BOX'
+    let rawPkg = (it.package_type || it.package_no || 'Pallet').toUpperCase()
+    let pkgType = 'PALLET'
+    if (rawPkg.includes('BOX') || rawPkg.includes('CARTON')) pkgType = 'CARTON BOX'
+    else if (rawPkg.includes('CRATE')) pkgType = 'WOODEN CRATE'
+    else if (rawPkg.includes('WOODEN BOX') || rawPkg.includes('W.BOX')) pkgType = 'WOODEN BOX'
+    else pkgType = 'PALLET'
 
     const pkgNo = String(it.package_no || '1').replace(/\D/g, '') || '1'
     const unitWt = it.unit_weight_kg || estimateUnitWeight(desc, uom)
     const totWt = it.total_net_weight_kg || Math.round(qtyVal * unitWt * 100) / 100
-    const dims = pkgNo === '1' ? '25 X 20 X 10 CM' : '35 X 20 X 15 CM'
+    const dims = pkgNo === '1' ? '120 X 80 X 100 CM' : '100 X 80 X 80 CM'
 
     let itemPo = poNumber
     if (poNumber.includes('//')) {
@@ -1459,8 +1493,8 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
     fgColor: { argb: 'FFF2F2F2' },
   }
 
-  // 1. Row 1: Merged A1:I1 "SUMMARY SHEET"
-  ws.mergeCells('A1:I1')
+  // 1. Row 1: Merged A1:H1 "SUMMARY SHEET"
+  ws.mergeCells('A1:H1')
   const cellA1 = ws.getCell('A1')
   cellA1.value = 'SUMMARY SHEET'
   cellA1.font = titleFont
@@ -1468,31 +1502,31 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
   ws.getRow(1).height = 28
 
   // 2. Metadata Rows 2, 3, 4
-  ws.mergeCells('A2:F2')
+  ws.mergeCells('A2:E2')
   const cellA2 = ws.getCell('A2')
   cellA2.value = `Client :${data.client || ''}`
   cellA2.font = metaFont
   cellA2.alignment = { horizontal: 'left', vertical: 'middle' }
   ws.getRow(2).height = 20
 
-  ws.mergeCells('A3:F3')
+  ws.mergeCells('A3:E3')
   const cellA3 = ws.getCell('A3')
   cellA3.value = `PO Number: ${data.po_number || ''}`
   cellA3.font = metaFont
   cellA3.alignment = { horizontal: 'left', vertical: 'middle' }
   ws.getRow(3).height = 20
 
-  ws.mergeCells('A4:F4')
+  ws.mergeCells('A4:E4')
   const cellA4 = ws.getCell('A4')
   cellA4.value = `MSG Ref:   ${data.msg_ref || ''}`
   cellA4.font = metaFont
   cellA4.alignment = { horizontal: 'left', vertical: 'middle' }
   ws.getRow(4).height = 20
 
-  // Merge G2:I4 for Logo
-  ws.mergeCells('G2:I4')
+  // Merge F2:H4 for Logo
+  ws.mergeCells('F2:H4')
   for (let r = 1; r <= 4; r++) {
-    for (let c = 1; c <= 9; c++) {
+    for (let c = 1; c <= 8; c++) {
       ws.getRow(r).getCell(c).border = thinBorder
     }
   }
@@ -1506,13 +1540,13 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
         extension: 'png',
       })
       ws.addImage(imgId, {
-        tl: { col: 6.2, row: 1.15 },
+        tl: { col: 5.2, row: 1.15 },
         ext: { width: 155, height: 50 },
       })
     } catch {}
   }
 
-  // 3. Row 5: Column Headers
+  // 3. Row 5: Column Headers (8 Clean Columns)
   const headers = [
     'Item.CF.Client PO Item No',
     'Item Desc',
@@ -1521,8 +1555,7 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
     'Heat Number',
     'Make',
     'Certificate Number',
-    'Remarks',
-    'BAPCO APPROVED TRANSMITTAL NUMBER'
+    'Remarks'
   ]
 
   ws.getRow(5).height = 26
@@ -1550,8 +1583,7 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
       it.heat_number || '-',
       it.make || autoDetectMake(it.description) || 'BENKAN, THAILAND',
       it.certificate_number || '-',
-      it.remarks || '',
-      data.bapco_transmittal || (data.client?.toUpperCase().includes('STS') ? 'TRA-STS-BAP-0157' : '-')
+      it.remarks || ''
     ]
 
     rowVals.forEach((val, cIdx) => {
@@ -1559,7 +1591,7 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
       cell.value = val
       cell.font = dataFont
       cell.border = thinBorder
-      if ([1, 3, 4, 5, 7, 8, 9].includes(cIdx + 1)) {
+      if ([1, 3, 4, 5, 7, 8].includes(cIdx + 1)) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
       } else {
         cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
@@ -1567,8 +1599,8 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
     })
   })
 
-  // Column Widths
-  const colWidths = [16, 50, 15, 8, 16, 22, 20, 16, 26]
+  // Column Widths (8 columns)
+  const colWidths = [16, 52, 16, 10, 18, 24, 22, 22]
   colWidths.forEach((w, idx) => {
     ws.getColumn(idx + 1).width = w
   })

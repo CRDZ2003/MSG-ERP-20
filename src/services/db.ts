@@ -1405,6 +1405,8 @@ class DBService {
           if (upItem.remarks !== undefined) existing.remarks = upItem.remarks
           if (upItem.supplier_name !== undefined) existing.supplier_name = upItem.supplier_name
           if (upItem.supplier_po_number !== undefined) existing.supplier_po_number = upItem.supplier_po_number
+          if (upItem.package_type !== undefined) existing.package_type = upItem.package_type
+          if (upItem.package_no !== undefined) existing.package_no = upItem.package_no
 
           // Synchronize matching allocation with updated heat and quantity
           const alloc = order.allocations?.find(a => (a.sales_order_item_id || a.so_item_id) === existing?.id)

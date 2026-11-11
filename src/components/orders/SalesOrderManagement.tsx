@@ -49,6 +49,7 @@ import {
   SourcingWorksheetData,
   SourcingLineItem,
   autoDetectMake,
+  autoDetectSupplier,
   autoDetectCountryOfOrigin,
   autoDetectHSCode,
   estimateUnitWeight,
@@ -111,6 +112,10 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
       location?: string
       requiredQty: number
       purchaseType?: 'regular' | 'local_purchase'
+      make?: string
+      supplierName?: string
+      packageType?: string
+      packageNo?: string
     }[]
     pdfBlobUrl: string
     fileName: string
@@ -260,6 +265,10 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         required_qty: it.requiredQty,
         client_po_item_no: it.clientPoItemNo || (it.position ? String(it.position) : undefined),
         position: it.position,
+        make: it.make,
+        supplier_name: it.supplierName || autoDetectSupplier(it.make || '', it.itemDescription || ''),
+        package_type: it.packageType || 'Pallet',
+        package_no: it.packageNo || '1',
       })),
       po_document_name: pdfParsedData.fileName,
       po_document_url: pdfParsedData.pdfBlobUrl,
@@ -319,7 +328,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         certificate_number: cert,
         make,
         remarks: cleanRemarks,
-        supplier_name: item.supplier_name || lot?.supplier_name || (make ? make.split(',')[0].trim() : 'BENKAN CORP'),
+        supplier_name: item.supplier_name || lot?.supplier_name || autoDetectSupplier(make, item.item_description || ''),
         supplier_po_number: (item as any).supplier_po_number || `MSG-PO-${(order.so_number || '2026').replace(/[^0-9]/g, '').slice(-4) || '1844'}`,
         hs_code: hs,
         country_of_origin: origin,
@@ -328,7 +337,8 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         unit_weight_kg: unitWeight,
         total_net_weight_kg: unitWeight * qty,
         total_gross_weight_kg: (unitWeight * qty) * 1.05,
-        package_no: `BOX-${Math.floor(idx / 3) + 1}`,
+        package_type: item.package_type || 'Pallet',
+        package_no: item.package_no || `${Math.floor(idx / 3) + 1}`,
         is_machined: false,
       }
     })
