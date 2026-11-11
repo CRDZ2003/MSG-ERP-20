@@ -77,7 +77,16 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
     customerName: string
     poNumber: string
     deliveryDate: string
-    items: { itemCode: string; itemDescription?: string; heatNumber?: string; location?: string; requiredQty: number; purchaseType?: 'regular' | 'local_purchase' }[]
+    items: {
+      position?: number
+      clientPoItemNo?: string
+      itemCode: string
+      itemDescription?: string
+      heatNumber?: string
+      location?: string
+      requiredQty: number
+      purchaseType?: 'regular' | 'local_purchase'
+    }[]
     pdfBlobUrl: string
     fileName: string
     file?: File
@@ -208,13 +217,16 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
   const handleCommitPdfSO = () => {
     if (!pdfParsedData) return
 
+    // Ensure items maintain strict position order with no duplicates
+    const sortedItems = [...pdfParsedData.items].sort((a, b) => (a.position || 0) - (b.position || 0))
+
     const res = db.createSalesOrder({
       customer_name: pdfParsedData.customerName,
       po_number: pdfParsedData.poNumber || 'PO-PDF',
       required_delivery_date: pdfParsedData.deliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
-      items: pdfParsedData.items.map(it => ({
+      items: sortedItems.map(it => ({
         item_code: it.itemCode,
-        item_description: it.itemDescription,
+        item_description: it.itemDescription || `${it.itemCode} Oilfield Material`,
         heat_number: it.heatNumber,
         location: it.location,
         required_qty: it.requiredQty
@@ -1041,6 +1053,7 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">
                           <tr>
+                            <th className="p-2 w-14 text-center">Pos #</th>
                             <th className="p-2 w-40">Item Code</th>
                             <th className="p-2">Description / Material Spec</th>
                             <th className="p-2 w-32">Heat No & Location</th>
@@ -1051,6 +1064,11 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                         <tbody className="divide-y divide-slate-100">
                           {pdfParsedData.items.map((it, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/50">
+                              <td className="p-2 text-center">
+                                <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-xs font-mono font-bold">
+                                  #{it.position || idx + 1}
+                                </span>
+                              </td>
                               <td className="p-2">
                                 <input
                                   type="text"

@@ -202,10 +202,11 @@ export const TechnicalSourcingPortal: React.FC = () => {
         const unitP = it.rate || 50
         const isMachined = isMeaningfulItem({ description: desc })
 
+        const pos = it.position || idx + 1
         return {
-          id: `ITM-PDF-${idx + 1}-${Date.now()}`,
-          sl_no: idx + 1,
-          client_po_item_no: it.clientPoItemNo || `${idx + 1}`,
+          id: `ITM-PDF-${pos}-${Date.now()}`,
+          sl_no: pos,
+          client_po_item_no: it.clientPoItemNo || `${pos}`,
           description: desc,
           qty: it.requiredQty || 1,
           uom: 'PCS',
