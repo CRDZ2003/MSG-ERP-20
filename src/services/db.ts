@@ -1099,8 +1099,9 @@ class DBService {
     customer_id?: string
     customer_name?: string
     po_number: string
+    so_number?: string
     required_delivery_date: string
-    items: { item_id?: string; item_code?: string; item_description?: string; heat_number?: string; location?: string; required_qty: number }[]
+    items: { item_id?: string; item_code?: string; item_description?: string; heat_number?: string; location?: string; required_qty: number; client_po_item_no?: string; position?: number }[]
     po_document_name?: string
     po_document_url?: string
     userEmail: string
@@ -1136,7 +1137,7 @@ class DBService {
     }
 
     const count = this.orders.length + 116
-    const soNumber = `SO-2026-${count}`
+    const soNumber = orderData.so_number?.trim() || `SO-2026-${count}`
     const orderId = `ORD-${count}`
 
     const allocations: StockAllocation[] = []
@@ -1363,6 +1364,62 @@ class DBService {
       order: newOrder,
       message: `Sales Order ${soNumber} created successfully.${allocations.length > 0 ? ` Automatically assigned ${allocations.length} Heat Certificate(s) and reserved stock.` : ''}`
     }
+  }
+
+  // Update Sales Order and apply changes everywhere (items, heats, suppliers, PO, client)
+  public updateSalesOrder(updatedData: {
+    id: string
+    so_number?: string
+    po_number?: string
+    customer_name?: string
+    required_delivery_date?: string
+    bapco_transmittal?: string
+    items?: Partial<SalesOrderItem>[]
+  }): { success: boolean; order?: SalesOrder; message?: string } {
+    const order = this.orders.find(o => o.id === updatedData.id)
+    if (!order) {
+      return { success: false, message: 'Sales Order not found' }
+    }
+
+    if (updatedData.so_number) order.so_number = updatedData.so_number.trim()
+    if (updatedData.po_number) order.po_number = updatedData.po_number.trim()
+    if (updatedData.customer_name) order.customer_name = updatedData.customer_name.trim()
+    if (updatedData.required_delivery_date) order.required_delivery_date = updatedData.required_delivery_date
+    if (updatedData.bapco_transmittal !== undefined) order.bapco_transmittal = updatedData.bapco_transmittal
+
+    if (updatedData.items && updatedData.items.length > 0) {
+      updatedData.items.forEach((upItem, idx) => {
+        let existing = order.items.find(i => i.id === upItem.id || (upItem.position && i.position === upItem.position))
+        if (!existing && order.items[idx]) {
+          existing = order.items[idx]
+        }
+        if (existing) {
+          if (upItem.item_code !== undefined) existing.item_code = upItem.item_code
+          if (upItem.item_description !== undefined) existing.item_description = upItem.item_description
+          if (upItem.client_po_item_no !== undefined) existing.client_po_item_no = upItem.client_po_item_no
+          if (upItem.required_qty !== undefined) existing.required_qty = upItem.required_qty
+          if (upItem.uom !== undefined) existing.uom = upItem.uom
+          if (upItem.heat_number !== undefined) existing.heat_number = upItem.heat_number
+          if (upItem.certificate_number !== undefined) existing.certificate_number = upItem.certificate_number
+          if (upItem.make !== undefined) existing.make = upItem.make
+          if (upItem.remarks !== undefined) existing.remarks = upItem.remarks
+          if (upItem.supplier_name !== undefined) existing.supplier_name = upItem.supplier_name
+          if (upItem.supplier_po_number !== undefined) existing.supplier_po_number = upItem.supplier_po_number
+
+          // Synchronize matching allocation with updated heat and quantity
+          const alloc = order.allocations?.find(a => (a.sales_order_item_id || a.so_item_id) === existing?.id)
+          if (alloc) {
+            if (upItem.heat_number) alloc.heat_number = upItem.heat_number
+            if (upItem.required_qty) alloc.allocated_qty = upItem.required_qty
+          }
+        }
+      })
+    }
+
+    order.updated_at = new Date().toISOString()
+    this.saveAll()
+    this.notify()
+    return { success: true, order, message: `Sales Order ${order.so_number} successfully updated across the ERP system!` }
   }
 
   // Import Sales Orders from Parsed Excel Records

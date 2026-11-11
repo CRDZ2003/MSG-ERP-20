@@ -821,6 +821,7 @@ export async function generateSalesOrderPDF(order: SalesOrder): Promise<Uint8Arr
 export async function parseCustomerSOPDF(file: File): Promise<{
   customerName: string
   poNumber: string
+  soNumber?: string
   deliveryDate: string
   items: {
     position?: number
@@ -1003,17 +1004,22 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     customerName = 'ADNOC Offshore'
   }
 
-  // 4. Detect PO Number / Ref#
-  let poNumber = 'U-PO003447'
+  // 4. Detect PO Number / Ref# and SO Number
+  let poNumber = 'PO-PENDING'
+  let soNumber: string | undefined = undefined
+  const soMatch = combinedText.match(/(?:Sales\s*Order\s*#|Sales\s*Order\s*No\.?|SO\s*#)[\s:]*([A-Za-z0-9\-_/]+)/i)
+  if (soMatch && soMatch[1]) {
+    soNumber = soMatch[1].trim()
+  }
+
   const refMatch = combinedText.match(/Ref\s*#?\s*[:\s]*[\r\n]*([A-Za-z0-9\-_/]+)/i)
   const lpoDirect = combinedText.match(/(LPO-[A-Za-z0-9\-_/]+)/i)
-  const soMatch = combinedText.match(/Sales\s*Order\s*#?\s*([A-Za-z0-9\-_/]+)/i)
   if (refMatch && refMatch[1] && refMatch[1].length > 2) {
     poNumber = refMatch[1].trim()
   } else if (lpoDirect) {
     poNumber = lpoDirect[1].trim()
-  } else if (soMatch && soMatch[1]) {
-    poNumber = soMatch[1].trim()
+  } else if (soNumber) {
+    poNumber = soNumber
   } else {
     const poGeneric = combinedText.match(/(?:Ref\s*#?|P\.O\.?\s*(?:#|No|Number)?|Order\s*(?:#|No|Number)?|PO\s*#?)[\s:]+([A-Za-z0-9\-_/]{4,35})/i)
     if (poGeneric) {
@@ -1332,6 +1338,7 @@ export async function parseCustomerSOPDF(file: File): Promise<{
   return {
     customerName,
     poNumber,
+    soNumber,
     deliveryDate,
     items,
     pdfBlobUrl: blobUrl,

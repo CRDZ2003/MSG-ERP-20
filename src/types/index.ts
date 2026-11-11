@@ -100,6 +100,7 @@ export interface SalesOrderItem {
   client_po_item_no?: string
   position?: number
   supplier_name?: string
+  supplier_po_number?: string
   required_qty: number
   allocated_qty: number
   dispatched_qty: number
@@ -128,6 +129,8 @@ export interface SalesOrder {
   id: string
   so_number: string
   po_number: string
+  msg_ref?: string
+  bapco_transmittal?: string
   customer_id: string
   customer_name: string
   order_date: string

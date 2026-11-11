@@ -44,6 +44,7 @@ export interface SourcingWorksheetData {
   vessel_flight?: string
   payment_terms?: string
   invoice_number?: string
+  bapco_transmittal?: string
   items: SourcingLineItem[]
   filter_machined_only?: boolean
   saved_at?: string
@@ -1469,21 +1470,21 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
   // 2. Metadata Rows 2, 3, 4
   ws.mergeCells('A2:F2')
   const cellA2 = ws.getCell('A2')
-  cellA2.value = `Client :${data.client || 'Bahrain Special Technical Services (STS) Co. W.L.L'}`
+  cellA2.value = `Client :${data.client || ''}`
   cellA2.font = metaFont
   cellA2.alignment = { horizontal: 'left', vertical: 'middle' }
   ws.getRow(2).height = 20
 
   ws.mergeCells('A3:F3')
   const cellA3 = ws.getCell('A3')
-  cellA3.value = `PO Number: ${data.po_number || 'BSTSPO260300029-Location-1'}`
+  cellA3.value = `PO Number: ${data.po_number || ''}`
   cellA3.font = metaFont
   cellA3.alignment = { horizontal: 'left', vertical: 'middle' }
   ws.getRow(3).height = 20
 
   ws.mergeCells('A4:F4')
   const cellA4 = ws.getCell('A4')
-  cellA4.value = `MSG Ref:   ${data.msg_ref || 'MSG-0326-1844'}`
+  cellA4.value = `MSG Ref:   ${data.msg_ref || ''}`
   cellA4.font = metaFont
   cellA4.alignment = { horizontal: 'left', vertical: 'middle' }
   ws.getRow(4).height = 20
@@ -1547,10 +1548,10 @@ export async function generateStickerSummaryExcel(data: SourcingWorksheetData): 
       it.qty || 0,
       it.uom || 'Ea',
       it.heat_number || '-',
-      it.make || 'DELCORTE, FRANCE',
+      it.make || autoDetectMake(it.description) || 'BENKAN, THAILAND',
       it.certificate_number || '-',
-      it.remarks || 'LOCATION-1',
-      'TRA-STS-BAP-0157'
+      it.remarks || '',
+      data.bapco_transmittal || (data.client?.toUpperCase().includes('STS') ? 'TRA-STS-BAP-0157' : '-')
     ]
 
     rowVals.forEach((val, cIdx) => {
