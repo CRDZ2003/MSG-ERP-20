@@ -1,6 +1,5 @@
 import { PDFDocument, rgb, StandardFonts, PDFPage } from 'pdf-lib'
 import * as XLSX from 'xlsx'
-import QRCode from 'qrcode'
 
 export interface StickerItem {
   sl_no: string | number
@@ -11,20 +10,17 @@ export interface StickerItem {
   heat_number: string
   certificate_number: string
   make: string
+  remarks_1?: string
+  remarks_2?: string
   remarks?: string
+  loc?: string
   location?: string
   supplier?: string
   po_number?: string
 }
 
-export interface StickerOptions {
-  font: 'Helvetica' | 'Times' | 'Courier'
-  addLogo: boolean
-  addQr: boolean
-}
-
-// Helper to extract LOC from remarks if formatted like "LOC: BB10" or "Stock BB10"
-export function extractLocationFromRemarks(rem1?: string, rem2?: string): string {
+// Extract and clean location from remarks exactly matching Python loc_labels_generator.py
+export function parseLocFromRemarks(rem1?: string, rem2?: string): string {
   const candidates: string[] = []
   for (const r of [rem1, rem2]) {
     if (!r) continue
@@ -33,14 +29,14 @@ export function extractLocationFromRemarks(rem1?: string, rem2?: string): string
 
     const match = val.match(/(?:LOC|LOCATION)\s*[:=\-]\s*(.*)/i)
     const cleaned = match ? match[1].trim() : val
-    if (cleaned && !candidates.includes(cleaned)) {
+    if (cleaned && !candidates.some(c => c.toUpperCase() === cleaned.toUpperCase())) {
       candidates.push(cleaned)
     }
   }
-  return candidates.length > 0 ? candidates.join(' / ') : 'WAREHOUSE STOCK'
+  return candidates.length > 0 ? candidates.join(' / ') : 'LOC: NOT FOUND'
 }
 
-// Parse Excel file into StickerItem array
+// Parse Excel file into StickerItem array (supports Stores Summary, Client Summary, and Master Inventory)
 export async function parseExcelForStickers(file: File | ArrayBuffer): Promise<StickerItem[]> {
   const arrayBuffer = file instanceof File ? await file.arrayBuffer() : file
   const wb = XLSX.read(arrayBuffer, { type: 'array' })
@@ -92,7 +88,7 @@ export async function parseExcelForStickers(file: File | ArrayBuffer): Promise<S
   const colRem1 = findCol(['Remarks-1', 'Remarks 1', 'Remark1', 'Remarks'])
   const colRem2 = findCol(['Remarks-2', 'Remarks 2', 'Remark2', 'Location'])
   const colSupp = findCol(['Supplier Name', 'Supplier', 'Vendor'])
-  const colPo = findCol(['PO Number', 'PO No', 'PO#', 'Customer PO'])
+  const colPo = findCol(['PO Number', 'PO No', 'PO#', 'Customer PO', 'Purchase Order'])
 
   const items: StickerItem[] = []
 
@@ -113,7 +109,7 @@ export async function parseExcelForStickers(file: File | ArrayBuffer): Promise<S
     const slRaw = getVal(colSl)
     const rem1 = getVal(colRem1)
     const rem2 = getVal(colRem2)
-    const loc = extractLocationFromRemarks(rem1, rem2)
+    const locVal = parseLocFromRemarks(rem1, rem2)
 
     items.push({
       sl_no: slRaw || items.length + 1,
@@ -123,451 +119,442 @@ export async function parseExcelForStickers(file: File | ArrayBuffer): Promise<S
       uom: getVal(colUom) || 'PCS',
       heat_number: getVal(colHeat) || '-',
       certificate_number: getVal(colCert) || '-',
-      make: getVal(colMake) || 'MSG APPROVED MILL',
+      make: getVal(colMake) || '-',
+      remarks_1: rem1,
+      remarks_2: rem2,
       remarks: rem1 || rem2 || '',
-      location: loc,
-      supplier: getVal(colSupp) || '',
-      po_number: getVal(colPo) || '',
+      loc: locVal,
+      location: locVal,
+      supplier: getVal(colSupp) || '-',
+      po_number: getVal(colPo) || '-',
     })
   }
+
+  // Sort strictly by SL NO number
+  items.sort((a, b) => {
+    const na = parseInt(String(a.sl_no).replace(/\D/g, ''), 10) || 0
+    const nb = parseInt(String(b.sl_no).replace(/\D/g, ''), 10) || 0
+    return na - nb
+  })
 
   return items
 }
 
-// Fetch logo array buffer
-async function fetchStickerLogoBuffer(): Promise<ArrayBuffer | null> {
-  const paths = ['/logo.png', '/assets/logo.png', '/assets/msg_logo.png']
+// Fetch image buffer helper
+async function tryFetchImageBuffer(paths: string[]): Promise<Uint8Array | null> {
   for (const p of paths) {
     try {
       const res = await fetch(p)
-      if (res.ok) return await res.arrayBuffer()
+      if (res.ok) {
+        const buf = await res.arrayBuffer()
+        return new Uint8Array(buf)
+      }
     } catch {}
   }
   return null
 }
 
-// Generate Print-Ready Stickers PDF (2 stickers per A4 page)
-export async function generateStickersPdf(
-  items: StickerItem[],
-  options: StickerOptions = { font: 'Helvetica', addLogo: true, addQr: true }
-): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create()
+function wrapLine(text: string, maxWidth: number, font: any, fontSize: number): string[] {
+  const words = text.split(' ')
+  const lines: string[] = []
+  let curLine = ''
 
-  // Select fonts
-  let fontBold: any
-  let fontRegular: any
-  if (options.font === 'Times') {
-    fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold)
-    fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman)
-  } else if (options.font === 'Courier') {
-    fontBold = await pdfDoc.embedFont(StandardFonts.CourierBold)
-    fontRegular = await pdfDoc.embedFont(StandardFonts.Courier)
-  } else {
-    fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-    fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  for (const w of words) {
+    const test = curLine ? `${curLine} ${w}` : w
+    const width = font.widthOfTextAtSize(test, fontSize)
+    if (width <= maxWidth) {
+      curLine = test
+    } else {
+      if (curLine) lines.push(curLine)
+      curLine = w
+    }
   }
+  if (curLine) lines.push(curLine)
+  return lines.length > 0 ? lines : ['-']
+}
 
-  // Pre-fetch Logo
+// Generate EXACT, Finalized Material Location Tags (2 per A4 Page) matching server/loc_labels_generator.py strictly
+export async function generateStickersPdf(items: StickerItem[]): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create()
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+
+  // Load Logo & Signature
+  const logoBytes = await tryFetchImageBuffer(['/logo.png', '/assets/logo.png', '/assets/msg_logo.png'])
   let embeddedLogo: any = null
-  if (options.addLogo) {
-    const logoBuf = await fetchStickerLogoBuffer()
-    if (logoBuf) {
+  if (logoBytes) {
+    try {
+      embeddedLogo = await pdfDoc.embedPng(logoBytes)
+    } catch {
       try {
-        embeddedLogo = await pdfDoc.embedPng(logoBuf)
-      } catch {
-        try {
-          embeddedLogo = await pdfDoc.embedJpg(logoBuf)
-        } catch {}
-      }
+        embeddedLogo = await pdfDoc.embedJpg(logoBytes)
+      } catch {}
     }
   }
 
-  // A4 dimensions: 595.28 x 841.89
+  const sigBytes = await tryFetchImageBuffer(['/assets/signature.png', '/signature.png'])
+  let embeddedSig: any = null
+  if (sigBytes) {
+    try {
+      embeddedSig = await pdfDoc.embedPng(sigBytes)
+    } catch {
+      try {
+        embeddedSig = await pdfDoc.embedJpg(sigBytes)
+      } catch {}
+    }
+  }
+
+  // Exact ReportLab A4 measurements from loc_labels_generator.py:
+  // pagesize = A4 = [595.28, 841.89]
+  // leftMargin = 14*mm = 39.68 pt, rightMargin = 39.68 pt
+  // printable_w = 515.92 pt, tag_width = 515.92 pt
+  // topMargin = 12*mm = 34.0 pt, bottomMargin = 34.0 pt
   const PAGE_WIDTH = 595.28
   const PAGE_HEIGHT = 841.89
+  const TAG_WIDTH = 515.92
+  const TAG_HEIGHT = 360
+  const TAG_X = (PAGE_WIDTH - TAG_WIDTH) / 2 // 39.68 pt
 
-  const STICKER_WIDTH = 547
-  const STICKER_HEIGHT = 385
-  const STICKER_X = (PAGE_WIDTH - STICKER_WIDTH) / 2 // 24.14 pt
+  const TAG_TOP_Y = PAGE_HEIGHT - 34.0 // 807.89 pt (top edge of Tag 1)
+  const TAG_BOTTOM_Y = 34.0 + TAG_HEIGHT // 394.0 pt (top edge of Tag 2)
 
-  // Top sticker Y = 432, Bottom sticker Y = 25
-  const STICKER_Y_TOP = 432
-  const STICKER_Y_BOTTOM = 25
+  const drawExactTag = (page: PDFPage, item: StickerItem, topY: number) => {
+    const bottomY = topY - TAG_HEIGHT
 
-  const drawSticker = async (page: PDFPage, item: StickerItem, startY: number) => {
-    // Outer Border & Card
+    // 1. Tag Outer Container (Primary Navy border #1E3A8A, 1.5 pt)
     page.drawRectangle({
-      x: STICKER_X,
-      y: startY,
-      width: STICKER_WIDTH,
-      height: STICKER_HEIGHT,
+      x: TAG_X,
+      y: bottomY,
+      width: TAG_WIDTH,
+      height: TAG_HEIGHT,
       color: rgb(1, 1, 1),
-      borderColor: rgb(0.12, 0.16, 0.24),
+      borderColor: rgb(0.118, 0.227, 0.541), // #1E3A8A
       borderWidth: 1.5,
     })
 
-    // Header Banner (Navy)
-    const headerHeight = 52
-    const headerY = startY + STICKER_HEIGHT - headerHeight
-    page.drawRectangle({
-      x: STICKER_X,
-      y: headerY,
-      width: STICKER_WIDTH,
-      height: headerHeight,
-      color: rgb(0.06, 0.11, 0.22),
-    })
+    const innerW = TAG_WIDTH - 10 // 505.92 pt
+    const innerX = TAG_X + 5
 
-    // Logo / Company Title
-    let titleStartX = STICKER_X + 16
-    if (options.addLogo && embeddedLogo) {
-      const logoAspect = embeddedLogo.width / embeddedLogo.height
-      const logoH = 34
-      const logoW = Math.min(logoH * logoAspect, 90)
+    // -------------------------------------------------------------
+    // Section 1: Header (Height 38 pt)
+    // -------------------------------------------------------------
+    const headerTop = topY - 5
+    const headerHeight = 38
+    const headerBottom = headerTop - headerHeight
+
+    // 1a. Logo Image (Left, maxW=125, maxH=34)
+    if (embeddedLogo) {
+      const aspect = embeddedLogo.width / embeddedLogo.height
+      const logoH = 32
+      const logoW = Math.min(logoH * aspect, 120)
       page.drawImage(embeddedLogo, {
-        x: STICKER_X + 14,
-        y: headerY + (headerHeight - logoH) / 2,
+        x: innerX + 4,
+        y: headerBottom + (headerHeight - logoH) / 2,
         width: logoW,
         height: logoH,
       })
-      titleStartX += logoW + 12
     }
 
-    page.drawText('MSG OILFIELD EQUIPMENT TRADING LLC', {
-      x: titleStartX,
-      y: headerY + 28,
-      size: 13,
+    // 1b. Title (Center): MATERIAL LOCATION / LOC
+    const titleText = 'MATERIAL LOCATION / LOC'
+    const titleSize = 12.5
+    const titleW = fontBold.widthOfTextAtSize(titleText, titleSize)
+    page.drawText(titleText, {
+      x: innerX + (innerW - titleW) / 2,
+      y: headerBottom + 20,
+      size: titleSize,
       font: fontBold,
-      color: rgb(1, 1, 1),
+      color: rgb(0.059, 0.090, 0.165), // #0F172A
     })
 
-    page.drawText('DUBAI INDUSTRIAL CITY, UAE  |  MATERIAL IDENTIFICATION & TRACEABILITY TAG', {
-      x: titleStartX,
-      y: headerY + 12,
-      size: 7.5,
-      font: fontBold,
-      color: rgb(0.95, 0.65, 0.25),
-    })
-
-    // Content Coordinates
-    const contentTopY = headerY - 14
-    const leftColX = STICKER_X + 16
-    const rightColX = STICKER_X + STICKER_WIDTH - 150
-
-    // Top Meta Row: SL NO, CLIENT PO ITEM NO, PO #
-    page.drawText(`ITEM / POS #: ${item.sl_no}`, {
-      x: leftColX,
-      y: contentTopY,
-      size: 9.5,
-      font: fontBold,
-      color: rgb(0.1, 0.15, 0.25),
-    })
-
-    if (item.client_po_item_no && item.client_po_item_no !== String(item.sl_no)) {
-      page.drawText(`CLIENT REF: ${item.client_po_item_no}`, {
-        x: leftColX + 130,
-        y: contentTopY,
-        size: 9,
-        font: fontRegular,
-        color: rgb(0.2, 0.25, 0.35),
-      })
-    }
-
-    if (item.po_number) {
-      page.drawText(`PO #: ${item.po_number}`, {
-        x: leftColX + 260,
-        y: contentTopY,
-        size: 9,
-        font: fontBold,
-        color: rgb(0.1, 0.3, 0.6),
-      })
-    }
-
-    // Horizontal Divider
-    page.drawLine({
-      start: { x: leftColX, y: contentTopY - 8 },
-      end: { x: rightColX - 10, y: contentTopY - 8 },
-      color: rgb(0.85, 0.88, 0.92),
-      thickness: 1,
-    })
-
-    // Description Section
-    const descY = contentTopY - 24
-    page.drawText('MATERIAL DESCRIPTION & SPECIFICATION:', {
-      x: leftColX,
-      y: descY,
-      size: 7.5,
-      font: fontBold,
-      color: rgb(0.4, 0.45, 0.5),
-    })
-
-    // Split long description across multiple lines (max ~52 chars per line)
-    const descText = item.description || '-'
-    const words = descText.split(' ')
-    const lines: string[] = []
-    let currentLine = ''
-
-    for (const w of words) {
-      if ((currentLine + ' ' + w).trim().length <= 50) {
-        currentLine = (currentLine + ' ' + w).trim()
-      } else {
-        lines.push(currentLine)
-        currentLine = w
-      }
-    }
-    if (currentLine) lines.push(currentLine)
-
-    const renderedLines = lines.slice(0, 3)
-    renderedLines.forEach((l, lIdx) => {
-      page.drawText(l, {
-        x: leftColX,
-        y: descY - 14 - lIdx * 13,
-        size: 9.5,
-        font: fontBold,
-        color: rgb(0.08, 0.1, 0.15),
-      })
-    })
-
-    // Critical Heat Number Block (Highlighted in prominent box)
-    const heatBoxY = descY - 60
-    const heatBoxWidth = rightColX - leftColX - 10
-    const heatBoxHeight = 38
-
-    page.drawRectangle({
-      x: leftColX,
-      y: heatBoxY,
-      width: heatBoxWidth,
-      height: heatBoxHeight,
-      color: rgb(0.99, 0.94, 0.94),
-      borderColor: rgb(0.85, 0.15, 0.15),
-      borderWidth: 1.5,
-    })
-
-    page.drawText('HEAT NUMBER:', {
-      x: leftColX + 10,
-      y: heatBoxY + 23,
-      size: 7.5,
-      font: fontBold,
-      color: rgb(0.65, 0.1, 0.1),
-    })
-
-    page.drawText(String(item.heat_number || 'REQUIRED').toUpperCase(), {
-      x: leftColX + 10,
-      y: heatBoxY + 8,
-      size: 13,
-      font: fontBold,
-      color: rgb(0.75, 0.05, 0.05),
-    })
-
-    page.drawText('CERTIFICATE / MTC #:', {
-      x: leftColX + 200,
-      y: heatBoxY + 23,
-      size: 7.5,
-      font: fontBold,
-      color: rgb(0.3, 0.35, 0.4),
-    })
-
-    const certStr = String(item.certificate_number || '-').slice(0, 24)
-    page.drawText(certStr, {
-      x: leftColX + 200,
-      y: heatBoxY + 8,
-      size: 10,
-      font: fontBold,
-      color: rgb(0.1, 0.15, 0.25),
-    })
-
-    // Qty, UOM, and Make Row
-    const qtyRowY = heatBoxY - 26
-    page.drawText(`QUANTITY: ${item.po_qty} ${item.uom || 'PCS'}`, {
-      x: leftColX,
-      y: qtyRowY,
-      size: 11,
-      font: fontBold,
-      color: rgb(0.05, 0.15, 0.35),
-    })
-
-    page.drawText(`MAKE: ${item.make || 'BENKAN THAILAND'}`, {
-      x: leftColX + 160,
-      y: qtyRowY,
-      size: 9.5,
-      font: fontBold,
-      color: rgb(0.15, 0.2, 0.25),
-    })
-
-    // Storage Location Box (Highlighted in Amber)
-    const locBoxY = qtyRowY - 42
-    const locBoxHeight = 32
-    page.drawRectangle({
-      x: leftColX,
-      y: locBoxY,
-      width: heatBoxWidth,
-      height: locBoxHeight,
-      color: rgb(1, 0.98, 0.92),
-      borderColor: rgb(0.9, 0.6, 0.1),
-      borderWidth: 1.2,
-    })
-
-    page.drawText('WAREHOUSE LOCATION / REMARKS:', {
-      x: leftColX + 10,
-      y: locBoxY + 18,
-      size: 7,
-      font: fontBold,
-      color: rgb(0.65, 0.4, 0.05),
-    })
-
-    const locText = item.location || item.remarks || 'WAREHOUSE STOCK'
-    page.drawText(locText.slice(0, 48), {
-      x: leftColX + 10,
-      y: locBoxY + 6,
-      size: 10.5,
-      font: fontBold,
-      color: rgb(0.7, 0.35, 0.0),
-    })
-
-    // Bottom Verification Bar
-    const footerY = startY + 10
-    page.drawText('All material subject to EN 10204 3.1 inspection. Do not dispatch without QA/QC verification.', {
-      x: leftColX,
-      y: footerY,
-      size: 6.8,
+    const subTitleText = 'MSG OILFIELD SUPPLIES'
+    const subTitleSize = 7.5
+    const subTitleW = fontRegular.widthOfTextAtSize(subTitleText, subTitleSize)
+    page.drawText(subTitleText, {
+      x: innerX + (innerW - subTitleW) / 2,
+      y: headerBottom + 8,
+      size: subTitleSize,
       font: fontRegular,
-      color: rgb(0.45, 0.5, 0.55),
+      color: rgb(0.278, 0.333, 0.412), // #475569
     })
 
-    // Right Column: QR Code OR QA/QC Verification Block
-    if (options.addQr) {
-      try {
-        const qrPayload = JSON.stringify({
-          co: 'MSG Oilfield',
-          item: item.sl_no,
-          heat: item.heat_number,
-          cert: item.certificate_number,
-          desc: item.description.slice(0, 40),
-          qty: `${item.po_qty} ${item.uom}`,
-          make: item.make,
-          loc: item.location || item.remarks || '',
-        })
+    // 1c. Ref Block (Right)
+    const slNoStr = `SL NO: ${item.sl_no}`
+    const slNoSize = 9.5
+    const slNoW = fontBold.widthOfTextAtSize(slNoStr, slNoSize)
+    page.drawText(slNoStr, {
+      x: innerX + innerW - slNoW - 4,
+      y: headerBottom + 20,
+      size: slNoSize,
+      font: fontBold,
+      color: rgb(0.118, 0.161, 0.231), // #1E293B
+    })
 
-        const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-          margin: 1,
-          width: 250,
-          errorCorrectionLevel: 'M',
-        })
+    const numOnly = String(item.sl_no).replace(/\D/g, '')
+    const refCodeStr = `REF #${numOnly ? numOnly.padStart(4, '0') : String(item.sl_no)}`
+    const refCodeSize = 7.0
+    const refCodeW = fontRegular.widthOfTextAtSize(refCodeStr, refCodeSize)
+    page.drawText(refCodeStr, {
+      x: innerX + innerW - refCodeW - 4,
+      y: headerBottom + 8,
+      size: refCodeSize,
+      font: fontRegular,
+      color: rgb(0.392, 0.455, 0.545), // #64748B
+    })
 
-        const qrImageBytes = await fetch(qrDataUrl).then(r => r.arrayBuffer())
-        const qrPdfImage = await pdfDoc.embedPng(qrImageBytes)
+    // -------------------------------------------------------------
+    // Section 2: LOC Display Box (Height 42 pt)
+    // -------------------------------------------------------------
+    const locBoxTop = headerBottom - 4
+    const locBoxHeight = 42
+    const locBoxBottom = locBoxTop - locBoxHeight
 
-        const qrSize = 120
-        const qrX = rightColX + 5
-        const qrY = heatBoxY - 25
+    const locVal = (item.loc || item.location || 'LOC: NOT FOUND').trim().toUpperCase()
+    const isNotFound = locVal.includes('NOT FOUND')
 
-        page.drawImage(qrPdfImage, {
-          x: qrX,
-          y: qrY,
-          width: qrSize,
-          height: qrSize,
-        })
+    page.drawRectangle({
+      x: innerX,
+      y: locBoxBottom,
+      width: innerW,
+      height: locBoxHeight,
+      color: isNotFound ? rgb(0.996, 0.949, 0.949) : rgb(0.973, 0.980, 0.988), // #FEF2F2 vs #F8FAFC
+      borderColor: isNotFound ? rgb(0.988, 0.647, 0.647) : rgb(0.796, 0.835, 0.882), // #FCA5A5 vs #CBD5E1
+      borderWidth: 1.0,
+    })
 
-        page.drawRectangle({
-          x: qrX,
-          y: qrY - 22,
-          width: qrSize,
-          height: 18,
-          color: rgb(0.06, 0.11, 0.22),
-          borderColor: rgb(0.06, 0.11, 0.22),
-          borderWidth: 1,
-        })
+    const locHdr = 'LOCATION / LOC'
+    const locHdrSize = 8.5
+    const locHdrW = fontBold.widthOfTextAtSize(locHdr, locHdrSize)
+    page.drawText(locHdr, {
+      x: innerX + (innerW - locHdrW) / 2,
+      y: locBoxBottom + 26,
+      size: locHdrSize,
+      font: fontBold,
+      color: isNotFound ? rgb(0.863, 0.149, 0.149) : rgb(0.278, 0.333, 0.412), // #DC2626 vs #475569
+    })
 
-        page.drawText('SCAN TRACEABILITY', {
-          x: qrX + 12,
-          y: qrY - 16,
-          size: 7,
-          font: fontBold,
-          color: rgb(1, 1, 1),
-        })
-      } catch (err) {
-        console.warn('QR generation error for item', item.sl_no, err)
-      }
-    } else {
-      // Inspection Sign-Off Block
-      const inspectBoxY = heatBoxY - 45
-      const inspectBoxW = 125
-      const inspectBoxH = 140
+    const locValSize = isNotFound ? 16.5 : 20.0
+    const locValW = fontBold.widthOfTextAtSize(locVal, locValSize)
+    page.drawText(locVal, {
+      x: innerX + (innerW - locValW) / 2,
+      y: locBoxBottom + 7,
+      size: locValSize,
+      font: fontBold,
+      color: isNotFound ? rgb(0.863, 0.149, 0.149) : rgb(0.059, 0.090, 0.165), // #DC2626 vs #0F172A
+    })
+
+    // -------------------------------------------------------------
+    // Section 3: Data Specification Table (4 rows, Total Height ~150 pt)
+    // -------------------------------------------------------------
+    const specTop = locBoxBottom - 6
+    const rowH = 26
+    const specTableHeight = rowH * 4
+    const specTableBottom = specTop - specTableHeight
+
+    const wL1 = 80
+    const wV1 = (innerW - 160) / 2 // ~173 pt
+    const wL2 = 80
+    const wV2 = (innerW - 160) / 2 // ~173 pt
+
+    const colX0 = innerX
+    const colX1 = colX0 + wL1
+    const colX2 = colX1 + wV1
+    const colX3 = colX2 + wL2
+    const colX4 = innerX + innerW
+
+    const rowBgColors = [
+      rgb(0.945, 0.961, 0.976), // Row 1: #F1F5F9
+      rgb(1, 1, 1),             // Row 2: #FFFFFF
+      rgb(0.973, 0.980, 0.988), // Row 3: #F8FAFC
+      rgb(1, 1, 1),             // Row 4: #FFFFFF
+    ]
+
+    const specRows = [
+      {
+        l1: 'Description:',
+        v1: item.description || '-',
+        isBold1: true,
+        l2: 'PO Number:',
+        v2: item.po_number || '-',
+        isBold2: true,
+      },
+      {
+        l1: 'PO Qty & UOM:',
+        v1: `${item.po_qty} ${item.uom}`.trim(),
+        isBold1: false,
+        l2: 'MAKE:',
+        v2: item.make || '-',
+        isBold2: false,
+      },
+      {
+        l1: 'Heat Number:',
+        v1: item.heat_number || '-',
+        isBold1: true,
+        l2: 'Certificate No:',
+        v2: item.certificate_number || '-',
+        isBold2: false,
+      },
+      {
+        l1: 'Supplier:',
+        v1: item.supplier || '-',
+        isBold1: false,
+        l2: 'Remarks (1 & 2):',
+        v2: `${item.remarks_1 || item.remarks || '-'} | ${item.remarks_2 || '-'}`,
+        isBold2: false,
+      },
+    ]
+
+    // Outer grid border & row backgrounds
+    for (let rIdx = 0; rIdx < 4; rIdx++) {
+      const rY = specTop - (rIdx + 1) * rowH
 
       page.drawRectangle({
-        x: rightColX + 5,
-        y: inspectBoxY,
-        width: inspectBoxW,
-        height: inspectBoxH,
-        color: rgb(0.97, 0.98, 1),
-        borderColor: rgb(0.2, 0.35, 0.6),
-        borderWidth: 1,
+        x: innerX,
+        y: rY,
+        width: innerW,
+        height: rowH,
+        color: rowBgColors[rIdx],
+        borderColor: rgb(0.886, 0.910, 0.941), // #E2E8F0
+        borderWidth: 0.5,
       })
 
-      page.drawText('QA/QC INSPECTION', {
-        x: rightColX + 16,
-        y: inspectBoxY + inspectBoxH - 18,
+      // Vertical separators
+      for (const sepX of [colX1, colX2, colX3]) {
+        page.drawLine({
+          start: { x: sepX, y: rY },
+          end: { x: sepX, y: rY + rowH },
+          color: rgb(0.886, 0.910, 0.941),
+          thickness: 0.5,
+        })
+      }
+
+      const rowData = specRows[rIdx]
+
+      // Label 1
+      page.drawText(rowData.l1, {
+        x: colX0 + 5,
+        y: rY + 8,
         size: 8,
         font: fontBold,
-        color: rgb(0.1, 0.2, 0.4),
+        color: rgb(0.200, 0.255, 0.333), // #334155
       })
 
-      page.drawLine({
-        start: { x: rightColX + 5, y: inspectBoxY + inspectBoxH - 24 },
-        end: { x: rightColX + 5 + inspectBoxW, y: inspectBoxY + inspectBoxH - 24 },
-        color: rgb(0.2, 0.35, 0.6),
-        thickness: 0.8,
-      })
+      // Value 1 (wrapped if description)
+      const val1Font = rowData.isBold1 ? fontBold : fontRegular
+      const val1Lines = wrapLine(rowData.v1, wV1 - 8, val1Font, 8.5)
+      if (val1Lines.length === 1) {
+        page.drawText(val1Lines[0], {
+          x: colX1 + 5,
+          y: rY + 8,
+          size: 8.5,
+          font: val1Font,
+          color: rgb(0.059, 0.090, 0.165), // #0F172A
+        })
+      } else {
+        page.drawText(val1Lines[0], {
+          x: colX1 + 5,
+          y: rY + 14,
+          size: 8,
+          font: val1Font,
+          color: rgb(0.059, 0.090, 0.165),
+        })
+        page.drawText(val1Lines[1], {
+          x: colX1 + 5,
+          y: rY + 4,
+          size: 8,
+          font: val1Font,
+          color: rgb(0.059, 0.090, 0.165),
+        })
+      }
 
-      page.drawText('STATUS: [X] VERIFIED', {
-        x: rightColX + 12,
-        y: inspectBoxY + inspectBoxH - 42,
-        size: 7.5,
+      // Label 2
+      page.drawText(rowData.l2, {
+        x: colX2 + 5,
+        y: rY + 8,
+        size: 8,
         font: fontBold,
-        color: rgb(0.1, 0.5, 0.2),
+        color: rgb(0.200, 0.255, 0.333), // #334155
       })
 
-      page.drawText('INSPECTED BY:', {
-        x: rightColX + 12,
-        y: inspectBoxY + 68,
-        size: 7,
-        font: fontRegular,
-        color: rgb(0.3, 0.35, 0.4),
-      })
-      page.drawLine({
-        start: { x: rightColX + 12, y: inspectBoxY + 54 },
-        end: { x: rightColX + 118, y: inspectBoxY + 54 },
-        color: rgb(0.6, 0.65, 0.7),
-        thickness: 0.8,
-      })
-
-      page.drawText('DATE / STAMP:', {
-        x: rightColX + 12,
-        y: inspectBoxY + 36,
-        size: 7,
-        font: fontRegular,
-        color: rgb(0.3, 0.35, 0.4),
-      })
-      page.drawLine({
-        start: { x: rightColX + 12, y: inspectBoxY + 22 },
-        end: { x: rightColX + 118, y: inspectBoxY + 22 },
-        color: rgb(0.6, 0.65, 0.7),
-        thickness: 0.8,
+      // Value 2
+      const val2Font = rowData.isBold2 ? fontBold : fontRegular
+      const val2Lines = wrapLine(rowData.v2, wV2 - 8, val2Font, 8.5)
+      page.drawText(val2Lines[0], {
+        x: colX3 + 5,
+        y: rY + 8,
+        size: 8.5,
+        font: val2Font,
+        color: rgb(0.059, 0.090, 0.165),
       })
     }
+
+    // -------------------------------------------------------------
+    // Section 4: Authorized Signature Section (Height ~40 pt)
+    // -------------------------------------------------------------
+    const sigTop = specTableBottom - 6
+    const sigHeight = 42
+    const sigBottom = sigTop - sigHeight
+
+    // Line above signature
+    page.drawLine({
+      start: { x: innerX, y: sigTop },
+      end: { x: innerX + innerW, y: sigTop },
+      color: rgb(0.796, 0.835, 0.882), // #CBD5E1
+      thickness: 0.5,
+    })
+
+    // Col 1: Authorized Signature (x = innerX + 4, width 140)
+    page.drawText('Authorized Signature', {
+      x: innerX + 4,
+      y: sigTop - 12,
+      size: 8,
+      font: fontBold,
+      color: rgb(0.118, 0.161, 0.231), // #1E293B
+    })
+
+    if (embeddedSig) {
+      const sigAspect = embeddedSig.width / embeddedSig.height
+      const sH = 22
+      const sW = Math.min(sH * sigAspect, 100)
+      page.drawImage(embeddedSig, {
+        x: innerX + 4,
+        y: sigBottom + 4,
+        width: sW,
+        height: sH,
+      })
+    }
+
+    // Col 2: Authorized By (x = innerX + 150)
+    page.drawText('Authorized By: ____________________', {
+      x: innerX + 150,
+      y: sigTop - 24,
+      size: 8,
+      font: fontBold,
+      color: rgb(0.200, 0.255, 0.333),
+    })
+
+    // Col 3: Date (x = innerX + 340)
+    page.drawText('Date: ____________________', {
+      x: innerX + 340,
+      y: sigTop - 24,
+      size: 8,
+      font: fontBold,
+      color: rgb(0.200, 0.255, 0.333),
+    })
   }
 
-  // Iterate items: 2 stickers per A4 page
+  // Iterate items: 2 tags per A4 page exactly
   for (let i = 0; i < items.length; i += 2) {
     const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
 
-    // Top Sticker
+    // Top Tag
     const itemTop = items[i]
-    await drawSticker(page, itemTop, STICKER_Y_TOP)
+    drawExactTag(page, itemTop, TAG_TOP_Y)
 
-    // Bottom Sticker (if exists)
+    // Bottom Tag (if exists)
     if (i + 1 < items.length) {
       const itemBottom = items[i + 1]
-      await drawSticker(page, itemBottom, STICKER_Y_BOTTOM)
+      drawExactTag(page, itemBottom, TAG_BOTTOM_Y)
     }
   }
 

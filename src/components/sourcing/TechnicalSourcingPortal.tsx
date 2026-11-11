@@ -18,6 +18,7 @@ import {
   DollarSign,
   Globe,
   Archive,
+  Tag,
 } from 'lucide-react'
 import {
   SourcingWorksheetData,
@@ -35,6 +36,12 @@ import {
   getSourcingDrafts,
   deleteSourcingDraft,
 } from '../../services/sourcingEngine'
+import {
+  generateStickersPdf,
+  downloadStickerPdfBlob,
+  StickerItem,
+  parseLocFromRemarks,
+} from '../../services/stickerEngine'
 import { parseCustomerSOPDF } from '../../services/pdfEngine'
 import { db } from '../../services/db'
 
@@ -707,6 +714,43 @@ export const TechnicalSourcingPortal: React.FC = () => {
           >
             <Archive className="h-4 w-4" />
             <span>{isExporting ? 'Generating ZIP...' : 'Supplier POs (.zip)'}</span>
+          </button>
+
+          {/* 5. Material Location Stickers */}
+          <button
+            onClick={async () => {
+              setIsExporting(true)
+              try {
+                const stickerItems: StickerItem[] = currentWorksheetData.items.map((it, idx) => ({
+                  sl_no: it.sl_no || (idx + 1),
+                  client_po_item_no: it.client_po_item_no || String(it.sl_no || idx + 1),
+                  description: it.description || '',
+                  po_qty: it.qty || 0,
+                  uom: it.uom || 'PCS',
+                  heat_number: it.heat_number || '-',
+                  certificate_number: it.certificate_number || '-',
+                  make: it.make || 'MSG / APPROVED OEM',
+                  supplier: it.supplier_name || 'MSG OILFIELD STORES',
+                  remarks: it.remarks || '',
+                  loc: it.remarks ? parseLocFromRemarks(it.remarks) : 'LOC: NOT FOUND',
+                  po_number: currentWorksheetData.po_number || poNumber,
+                }))
+                const pdfBytes = await generateStickersPdf(stickerItems)
+                const safeName = (poNumber || 'so').replace(/[^a-zA-Z0-9]/g, '_')
+                downloadStickerPdfBlob(pdfBytes, `stickers_${safeName}_final.pdf`)
+                setStatusNotice('Material Location Stickers PDF exported successfully matching finalized layout!')
+              } catch (err: any) {
+                alert('Error generating Material Stickers: ' + err.message)
+              } finally {
+                setIsExporting(false)
+              }
+            }}
+            disabled={isExporting}
+            className="bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs px-3.5 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-colors"
+            title="Generate & download official Material Location Stickers PDF (2 per page, ReportLab format)"
+          >
+            <Tag className="h-4 w-4" />
+            <span>Material Stickers (.pdf)</span>
           </button>
         </div>
       </div>
