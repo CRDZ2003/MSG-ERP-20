@@ -11,6 +11,7 @@ import { SalesOrderManagement } from './components/orders/SalesOrderManagement'
 import { StockAllocationStudio } from './components/allocation/StockAllocationStudio'
 import { TechnicalSourcingPortal } from './components/sourcing/TechnicalSourcingPortal'
 import { LOCManagementPortal } from './components/loc/LOCManagementPortal'
+import { StickerGeneratorPortal } from './components/stickers/StickerGeneratorPortal'
 import { StorekeeperApprovals } from './components/approvals/StorekeeperApprovals'
 import { MTCManagement } from './components/mtc/MTCManagement'
 import { LocalPurchaseManager } from './components/localPurchase/LocalPurchaseManager'
@@ -138,6 +139,8 @@ const MainApp: React.FC = () => {
             {activeTab === 'sourcing' && <TechnicalSourcingPortal />}
 
             {activeTab === 'loc' && <LOCManagementPortal />}
+
+            {activeTab === 'stickers' && <StickerGeneratorPortal />}
 
             {activeTab === 'approvals' && <StorekeeperApprovals />}
 

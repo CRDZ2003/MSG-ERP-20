@@ -389,7 +389,38 @@ def generate_loc_certificate():
 def generate_loc_labels():
     if not generate_loc_labels_pdf:
         return jsonify({"error": "LOC Labels generator is not available"}), 503
-    return jsonify({"success": True, "message": "Use client-side PDF-Lib generator for real-time in-browser tags"})
+@app.route('/generate-sticker', methods=['POST'])
+@app.route('/api/generate-sticker', methods=['POST'])
+def generate_sticker_endpoint():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+        file = request.files['file']
+        font = request.form.get('font', 'Helvetica')
+        add_logo = request.form.get('addLogo', 'false').lower() == 'true'
+        add_qr = request.form.get('addQr', 'false').lower() == 'true'
+
+        temp_dir = tempfile.gettempdir()
+        temp_xlsx = os.path.join(temp_dir, f"temp_{file.filename}")
+        file.save(temp_xlsx)
+
+        temp_out_pdf = os.path.join(temp_dir, "stickers_msg_final.pdf")
+        logo_path = os.path.join(BASE_DIR, 'static', 'logo.png')
+        sig_path = os.path.join(BASE_DIR, 'assets', 'signature.png')
+
+        if generate_loc_labels_pdf:
+            generate_loc_labels_pdf(temp_xlsx, logo_path, sig_path, temp_out_pdf)
+            return send_file(temp_out_pdf, mimetype='application/pdf', as_attachment=True, download_name="stickers_msg_final.pdf")
+        else:
+            return jsonify({"error": "Sticker backend generator unavailable"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'temp_xlsx' in locals() and os.path.exists(temp_xlsx):
+            try:
+                os.remove(temp_xlsx)
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=True)
