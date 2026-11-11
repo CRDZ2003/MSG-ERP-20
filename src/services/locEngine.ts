@@ -228,15 +228,26 @@ export async function generateLOCPdf(
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
   const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
 
-  // A4 Dimensions: 595.28 x 841.89 points
+  // Standard A4 Dimensions: 595.28 x 841.89 points
   const pageWidth = 595.28
   const pageHeight = 841.89
   const marginX = 40
-  const contentWidth = pageWidth - marginX * 2 // 515.28
+  const contentWidth = pageWidth - marginX * 2 // 515.28 pt
 
-  // Try loading letterhead images from /assets/
-  const headerBytes = await tryFetchImageBytes('/assets/msg_header.png')
-  const footerBytes = await tryFetchImageBytes('/assets/msg_footer.png')
+  // 1. Try loading vector letterhead template first (100% vector-crisp, NEVER stretched)
+  let embeddedTemplate: any = null
+  const templateBytes = await tryFetchImageBytes('/assets/letterhead_template.pdf')
+  if (templateBytes) {
+    try {
+      const templateDoc = await PDFDocument.load(templateBytes)
+      const [tPage] = await pdfDoc.embedPdf(templateDoc, [0])
+      embeddedTemplate = tPage
+    } catch (_) {}
+  }
+
+  // 2. Fallback raster assets (strict proportional aspect ratio)
+  const headerBytes = !embeddedTemplate ? await tryFetchImageBytes('/assets/msg_header.png') : null
+  const footerBytes = !embeddedTemplate ? await tryFetchImageBytes('/assets/msg_footer.png') : null
   const stampBytes = options.customStampDataUrl
     ? dataUrlToBytes(options.customStampDataUrl)
     : await tryFetchImageBytes('/assets/stamp.png')
@@ -262,7 +273,7 @@ export async function generateLOCPdf(
     if (includeSignature && sigBytes) embeddedSigImg = await pdfDoc.embedPng(sigBytes)
   } catch (_) {}
 
-  // Filter items to only those with remarks if user wants, or show all
+  // Filter items
   const displayItems = items.length > 0 ? items : [
     {
       sl_no: '1',
@@ -274,104 +285,102 @@ export async function generateLOCPdf(
     },
   ]
 
-  // Pagination support: items per page
-  const itemsPerPage = 8
+  // Pagination support: 7 items per page to leave clean breathing room for header & signature
+  const itemsPerPage = 7
   const totalPages = Math.max(1, Math.ceil(displayItems.length / itemsPerPage))
 
   for (let pageNum = 0; pageNum < totalPages; pageNum++) {
     const page = pdfDoc.addPage([pageWidth, pageHeight])
-    let curY = pageHeight - 30
 
-    // 1. Header Banner
-    if (embeddedHeaderImg) {
-      const headerAspect = embeddedHeaderImg.width / embeddedHeaderImg.height
-      const hHeight = Math.min(65, contentWidth / headerAspect)
-      page.drawImage(embeddedHeaderImg, {
-        x: marginX,
-        y: curY - hHeight,
-        width: contentWidth,
-        height: hHeight,
+    // A. Draw Letterhead Overlay (Vector or Proportional Raster)
+    if (embeddedTemplate) {
+      page.drawPage(embeddedTemplate, {
+        x: 0,
+        y: 0,
+        width: pageWidth,
+        height: pageHeight,
       })
-      curY -= (hHeight + 15)
     } else {
-      // Fallback Vector Corporate Banner
-      page.drawRectangle({
-        x: marginX,
-        y: curY - 50,
-        width: contentWidth,
-        height: 50,
-        color: rgb(0.04, 0.12, 0.28),
-      })
-      page.drawText('MSG OILFIELD EQUIPMENT TRADING LLC', {
-        x: marginX + 15,
-        y: curY - 24,
-        size: 14,
-        font: fontBold,
-        color: rgb(1, 1, 1),
-      })
-      page.drawText('DUBAI, UNITED ARAB EMIRATES | QA/QC & TECHNICAL COMPLIANCE', {
-        x: marginX + 15,
-        y: curY - 40,
-        size: 8,
-        font: fontRegular,
-        color: rgb(0.85, 0.9, 1),
-      })
-      curY -= 65
+      if (embeddedHeaderImg) {
+        const hAspect = embeddedHeaderImg.width / embeddedHeaderImg.height
+        const hW = contentWidth
+        const hH = Math.min(85, hW / hAspect)
+        page.drawImage(embeddedHeaderImg, {
+          x: marginX,
+          y: pageHeight - hH - 12,
+          width: hW,
+          height: hH,
+        })
+      }
+      if (embeddedFooterImg) {
+        const fAspect = embeddedFooterImg.width / embeddedFooterImg.height
+        const fW = contentWidth
+        const fH = Math.min(45, fW / fAspect)
+        page.drawImage(embeddedFooterImg, {
+          x: marginX,
+          y: 12,
+          width: fW,
+          height: fH,
+        })
+      }
     }
 
-    // 2. Metadata Block
+    // B. Content Positioning: Starts strictly below letterhead header (Y = 718 pt)
+    let curY = 718
+
+    // 1. Metadata Block
     const metaY = curY
     page.drawText(`Date: ${metadata.date || new Date().toLocaleDateString('en-GB')}`, {
       x: marginX,
       y: metaY,
       size: 9.5,
       font: fontBold,
-      color: rgb(0.1, 0.1, 0.1),
+      color: rgb(0, 0, 0),
     })
     page.drawText(`TO: ${metadata.to_client || 'VALUED CUSTOMER'}`, {
       x: marginX,
       y: metaY - 14,
       size: 9.5,
       font: fontBold,
-      color: rgb(0.1, 0.1, 0.1),
+      color: rgb(0, 0, 0),
     })
     page.drawText(`PO Number: ${metadata.po_number || 'N/A'}`, {
       x: marginX,
       y: metaY - 28,
       size: 9.5,
       font: fontBold,
-      color: rgb(0.1, 0.1, 0.1),
+      color: rgb(0, 0, 0),
     })
     page.drawText(`MSG Ref: ${metadata.msg_ref || 'MSG/LOC/' + new Date().getFullYear()}`, {
       x: marginX,
       y: metaY - 42,
       size: 9.5,
       font: fontBold,
-      color: rgb(0.1, 0.1, 0.1),
+      color: rgb(0, 0, 0),
     })
 
     curY -= 62
 
-    // 3. Document Title
+    // 2. Document Title
     const titleText = 'LETTER OF COMPLIANCE'
-    const titleWidth = fontBold.widthOfTextAtSize(titleText, 13)
+    const titleWidth = fontBold.widthOfTextAtSize(titleText, 12)
     page.drawText(titleText, {
       x: (pageWidth - titleWidth) / 2,
       y: curY,
-      size: 13,
+      size: 12,
       font: fontBold,
-      color: rgb(0.05, 0.15, 0.35),
+      color: rgb(0, 0, 0),
     })
     page.drawLine({
       start: { x: (pageWidth - titleWidth) / 2, y: curY - 2 },
       end: { x: (pageWidth + titleWidth) / 2, y: curY - 2 },
-      thickness: 1.2,
-      color: rgb(0.05, 0.15, 0.35),
+      thickness: 1,
+      color: rgb(0, 0, 0),
     })
 
-    curY -= 20
+    curY -= 18
 
-    // 4. Compliance Declaration Statement
+    // 3. Dynamic Compliance Declaration
     const { verb, noun } = buildComplianceWording(metadata.action_type)
     const statement = metadata.custom_declaration ||
       `We hereby confirm that below listed items have been ${verb.toUpperCase()} as per the client PO requirements. Subsequent to the ${noun}, dimensional verification and visual inspection were conducted, and the items are found to be acceptable and in full compliance with the applicable industry standards.`
@@ -383,26 +392,26 @@ export async function generateLOCPdf(
         y: curY,
         size: 9,
         font: fontRegular,
-        color: rgb(0.15, 0.15, 0.15),
+        color: rgb(0.1, 0.1, 0.1),
       })
       curY -= 12
     }
 
     curY -= 10
 
-    // 5. Items Table Header
-    const colWidths = [32, 195, 42, 38, 76, 132.28] // sum = 515.28
+    // 4. Items Table
+    const colWidths = [32, 195, 42, 38, 76, 132.28] // sum = 515.28 pt
     const colHeaders = ['Sl.No', 'Description', 'PO Qty', 'UOM', 'Heat Number', 'Remarks']
     const tableHeaderHeight = 20
 
-    // Draw header row background
+    // Header Background
     page.drawRectangle({
       x: marginX,
       y: curY - tableHeaderHeight,
       width: contentWidth,
       height: tableHeaderHeight,
-      color: rgb(0.92, 0.95, 0.99),
-      borderColor: rgb(0.3, 0.3, 0.3),
+      color: rgb(0.96, 0.96, 0.96),
+      borderColor: rgb(0, 0, 0),
       borderWidth: 0.75,
     })
 
@@ -416,14 +425,14 @@ export async function generateLOCPdf(
         y: curY - 14,
         size: 8.5,
         font: fontBold,
-        color: rgb(0.08, 0.15, 0.3),
+        color: rgb(0, 0, 0),
       })
       if (c > 0) {
         page.drawLine({
           start: { x: curColX, y: curY },
           end: { x: curColX, y: curY - tableHeaderHeight },
           thickness: 0.75,
-          color: rgb(0.3, 0.3, 0.3),
+          color: rgb(0, 0, 0),
         })
       }
       curColX += colWidths[c]
@@ -431,7 +440,7 @@ export async function generateLOCPdf(
 
     curY -= tableHeaderHeight
 
-    // 6. Items Table Rows
+    // Items Table Rows
     const pageItems = displayItems.slice(pageNum * itemsPerPage, (pageNum + 1) * itemsPerPage)
 
     for (let r = 0; r < pageItems.length; r++) {
@@ -441,14 +450,14 @@ export async function generateLOCPdf(
       const lineCount = Math.max(1, descLines.length, remLines.length)
       const rowHeight = Math.max(22, lineCount * 11 + 6)
 
-      // Row background (alternate striping)
+      // Row background
       page.drawRectangle({
         x: marginX,
         y: curY - rowHeight,
         width: contentWidth,
         height: rowHeight,
         color: r % 2 === 0 ? rgb(1, 1, 1) : rgb(0.98, 0.98, 0.99),
-        borderColor: rgb(0.4, 0.4, 0.4),
+        borderColor: rgb(0, 0, 0),
         borderWidth: 0.5,
       })
 
@@ -460,7 +469,7 @@ export async function generateLOCPdf(
             start: { x: colX, y: curY },
             end: { x: colX, y: curY - rowHeight },
             thickness: 0.5,
-            color: rgb(0.4, 0.4, 0.4),
+            color: rgb(0, 0, 0),
           })
         }
         colX += colWidths[c]
@@ -474,7 +483,7 @@ export async function generateLOCPdf(
         y: curY - 14,
         size: 8,
         font: fontRegular,
-        color: rgb(0.1, 0.1, 0.1),
+        color: rgb(0, 0, 0),
       })
 
       // Description lines
@@ -485,7 +494,7 @@ export async function generateLOCPdf(
           y: dY,
           size: 8,
           font: fontRegular,
-          color: rgb(0.1, 0.1, 0.1),
+          color: rgb(0, 0, 0),
         })
         dY -= 10
       }
@@ -498,7 +507,7 @@ export async function generateLOCPdf(
         y: curY - 14,
         size: 8,
         font: fontBold,
-        color: rgb(0.1, 0.1, 0.1),
+        color: rgb(0, 0, 0),
       })
 
       // UOM
@@ -509,7 +518,7 @@ export async function generateLOCPdf(
         y: curY - 14,
         size: 8,
         font: fontRegular,
-        color: rgb(0.1, 0.1, 0.1),
+        color: rgb(0, 0, 0),
       })
 
       // Heat Number
@@ -520,7 +529,7 @@ export async function generateLOCPdf(
         y: curY - 14,
         size: 8,
         font: fontBold,
-        color: rgb(0.05, 0.2, 0.5),
+        color: rgb(0, 0, 0),
       })
 
       // Remarks lines
@@ -531,7 +540,7 @@ export async function generateLOCPdf(
           y: rY,
           size: 8,
           font: fontRegular,
-          color: rgb(0.15, 0.15, 0.15),
+          color: rgb(0, 0, 0),
         })
         rY -= 10
       }
@@ -541,38 +550,46 @@ export async function generateLOCPdf(
 
     curY -= 20
 
-    // 7. Signature & QA/QC Stamp Block (Only on last page or bottom of each)
+    // 5. Signature Section (Strictly un-stretched with natural aspect ratio)
     if (pageNum === totalPages - 1) {
-      page.drawText('For MSG Oilfield Equipment Trading LLC,', {
+      page.drawText('For MSG Oilfield Equipment Trading,', {
         x: marginX,
         y: curY,
         size: 9.5,
         font: fontBold,
-        color: rgb(0.08, 0.15, 0.3),
+        color: rgb(0, 0, 0),
       })
 
-      curY -= 15
+      curY -= 10
 
-      // Draw QA/QC Stamp & Signature Overlay
-      const sigBlockY = curY - 45
+      // Stamp and Signature side-by-side / overlay without distortion
+      const sigBlockY = curY - 50
+
       if (embeddedStampImg) {
+        const stampAspect = embeddedStampImg.width / embeddedStampImg.height
+        const stampH = 55
+        const stampW = stampH * stampAspect
         page.drawImage(embeddedStampImg, {
           x: marginX + 10,
-          y: sigBlockY - 5,
-          width: 58,
-          height: 58,
-        })
-      }
-      if (embeddedSigImg) {
-        page.drawImage(embeddedSigImg, {
-          x: marginX + (embeddedStampImg ? 50 : 15),
           y: sigBlockY,
-          width: 80,
-          height: 45,
+          width: stampW,
+          height: stampH,
         })
       }
 
-      curY -= 55
+      if (embeddedSigImg) {
+        const sigAspect = embeddedSigImg.width / embeddedSigImg.height
+        const sigH = 38
+        const sigW = sigH * sigAspect
+        page.drawImage(embeddedSigImg, {
+          x: marginX + (embeddedStampImg ? 55 : 15),
+          y: sigBlockY + 8,
+          width: sigW,
+          height: sigH,
+        })
+      }
+
+      curY -= 58
 
       // Signatory Name & Title
       page.drawText(metadata.signatory_name || 'Vijay Dsouza', {
@@ -580,53 +597,29 @@ export async function generateLOCPdf(
         y: curY,
         size: 9.5,
         font: fontBold,
-        color: rgb(0.1, 0.1, 0.1),
+        color: rgb(0, 0, 0),
       })
       page.drawText(metadata.signatory_title || '( QA / QC Dept )', {
         x: marginX,
         y: curY - 12,
         size: 8.5,
         font: fontRegular,
-        color: rgb(0.35, 0.35, 0.35),
+        color: rgb(0.25, 0.25, 0.25),
       })
     }
 
-    // 8. Footer Section
-    if (embeddedFooterImg) {
-      const footerAspect = embeddedFooterImg.width / embeddedFooterImg.height
-      const fHeight = Math.min(38, contentWidth / footerAspect)
-      page.drawImage(embeddedFooterImg, {
-        x: marginX,
+    // Page number if multi-page
+    if (totalPages > 1) {
+      const pageStr = `Page ${pageNum + 1} of ${totalPages}`
+      const pageStrW = fontOblique.widthOfTextAtSize(pageStr, 7.5)
+      page.drawText(pageStr, {
+        x: marginX + contentWidth - pageStrW,
         y: 20,
-        width: contentWidth,
-        height: fHeight,
-      })
-    } else {
-      page.drawLine({
-        start: { x: marginX, y: 35 },
-        end: { x: marginX + contentWidth, y: 35 },
-        thickness: 0.5,
-        color: rgb(0.7, 0.7, 0.7),
-      })
-      page.drawText('MSG OILFIELD EQUIPMENT TRADING LLC | ISO 9001:2015 CERTIFIED', {
-        x: marginX,
-        y: 22,
         size: 7.5,
-        font: fontRegular,
+        font: fontOblique,
         color: rgb(0.4, 0.4, 0.4),
       })
     }
-
-    // Page Number
-    const pageStr = `Page ${pageNum + 1} of ${totalPages}`
-    const pageStrW = fontOblique.widthOfTextAtSize(pageStr, 8)
-    page.drawText(pageStr, {
-      x: marginX + contentWidth - pageStrW,
-      y: 22,
-      size: 8,
-      font: fontOblique,
-      color: rgb(0.4, 0.4, 0.4),
-    })
   }
 
   return await pdfDoc.save()
@@ -850,11 +843,14 @@ export async function generateMaterialLocationTagsPdf(
       })
 
       if (embeddedSigImg) {
+        const sigAspect = embeddedSigImg.width / embeddedSigImg.height
+        const sigH = 26
+        const sigW = sigH * sigAspect
         page.drawImage(embeddedSigImg, {
           x: marginX + tagWidth / 2 + 10,
           y: curY - 44,
-          width: 55,
-          height: 25,
+          width: sigW,
+          height: sigH,
         })
       }
       page.drawText('Vijay Dsouza (QA/QC Dept)', {
