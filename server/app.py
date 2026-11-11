@@ -21,10 +21,16 @@ try:
     from loc_labels_generator import build_loc_pdf as generate_loc_labels_pdf
     from loc_excel_parser import parse_excel_summary as parse_loc_excel
 except Exception as _e:
-    print(f"LOC module optional load warning: {_e}")
     generate_loc_pdf = None
     generate_loc_labels_pdf = None
     parse_loc_excel = None
+
+try:
+    from sticker_label_generator import build_58mm_stickers_pdf, parse_summary_sheet_xlsx
+except Exception as _se:
+    print(f"Sticker label generator load warning: {_se}")
+    build_58mm_stickers_pdf = None
+    parse_summary_sheet_xlsx = None
 
 app = Flask(
     __name__,
@@ -396,19 +402,22 @@ def generate_sticker_endpoint():
         if 'file' not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
         file = request.files['file']
-        font = request.form.get('font', 'Helvetica')
-        add_logo = request.form.get('addLogo', 'false').lower() == 'true'
-        add_qr = request.form.get('addQr', 'false').lower() == 'true'
 
         temp_dir = tempfile.gettempdir()
         temp_xlsx = os.path.join(temp_dir, f"temp_{file.filename}")
         file.save(temp_xlsx)
 
         temp_out_pdf = os.path.join(temp_dir, "stickers_msg_final.pdf")
-        logo_path = os.path.join(BASE_DIR, 'static', 'logo.png')
-        sig_path = os.path.join(BASE_DIR, 'assets', 'signature.png')
+        logo_path = os.path.join(BASE_DIR, '..', 'public', 'logo.png')
+        if not os.path.exists(logo_path):
+            logo_path = os.path.join(BASE_DIR, 'static', 'logo.png')
 
-        if generate_loc_labels_pdf:
+        if build_58mm_stickers_pdf and parse_summary_sheet_xlsx:
+            client_name, po_number, items = parse_summary_sheet_xlsx(temp_xlsx)
+            build_58mm_stickers_pdf(items, temp_out_pdf, logo_path=logo_path, client_name=client_name, po_number=po_number)
+            return send_file(temp_out_pdf, mimetype='application/pdf', as_attachment=True, download_name="stickers_msg_final.pdf")
+        elif generate_loc_labels_pdf:
+            sig_path = os.path.join(BASE_DIR, 'assets', 'signature.png')
             generate_loc_labels_pdf(temp_xlsx, logo_path, sig_path, temp_out_pdf)
             return send_file(temp_out_pdf, mimetype='application/pdf', as_attachment=True, download_name="stickers_msg_final.pdf")
         else:
