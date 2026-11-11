@@ -252,7 +252,9 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
         item_description: it.itemDescription || `${it.itemCode} Oilfield Material`,
         heat_number: it.heatNumber,
         location: it.location,
-        required_qty: it.requiredQty
+        required_qty: it.requiredQty,
+        client_po_item_no: it.clientPoItemNo || (it.position ? String(it.position) : undefined),
+        position: it.position,
       })),
       po_document_name: pdfParsedData.fileName,
       po_document_url: pdfParsedData.pdfBlobUrl,

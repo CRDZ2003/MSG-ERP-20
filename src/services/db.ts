@@ -1322,6 +1322,8 @@ class DBService {
         item_description: item.item_description?.trim() || itm?.item_description || '',
         heat_number: specifiedHeat,
         location: item.location,
+        client_po_item_no: (item as any).client_po_item_no,
+        position: (item as any).position,
         required_qty: item.required_qty,
         allocated_qty: allocatedQty,
         dispatched_qty: 0,
