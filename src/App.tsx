@@ -18,7 +18,7 @@ import { LocalPurchaseManager } from './components/localPurchase/LocalPurchaseMa
 import { DispatchManager } from './components/dispatch/DispatchManager'
 import { StockMovementsLedger } from './components/movements/StockMovementsLedger'
 import { ReturnsAndAdjustments } from './components/returns/ReturnsAndAdjustments'
-import { ReportsCenter } from './components/reports/ReportsCenter'
+import { CustomerReportsAnalytics } from './components/reports/CustomerReportsAnalytics'
 import { ExcelStudio } from './components/excel/ExcelStudio'
 import { UserManagement } from './components/users/UserManagement'
 import { AuditLogsView } from './components/audit/AuditLogsView'
@@ -165,6 +165,17 @@ const MainApp: React.FC = () => {
             {activeTab === 'movements' && <StockMovementsLedger />}
 
             {activeTab === 'returns' && <ReturnsAndAdjustments />}
+
+            {activeTab === 'reports' && (
+              <CustomerReportsAnalytics
+                onNavigateToSourcing={() => {
+                  setActiveTab('sourcing')
+                }}
+                onPreviewMTC={(docName, itemCode, heat) =>
+                  setActivePdfPreview({ docName, itemCode, heatNumber: heat })
+                }
+              />
+            )}
 
             {activeTab === 'excel' && (
               <ExcelStudio

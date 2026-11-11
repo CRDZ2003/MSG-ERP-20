@@ -81,6 +81,7 @@ export type SalesOrderStatus =
   | 'Approved'
   | 'MTC Pending'
   | 'MTC Generated'
+  | 'Ready for Dispatch'
   | 'Partially Dispatched'
   | 'Dispatched'
   | 'Cancelled'
@@ -92,7 +93,13 @@ export interface SalesOrderItem {
   item_code: string
   item_description: string
   heat_number?: string
+  certificate_number?: string
+  make?: string
   location?: string
+  remarks?: string
+  client_po_item_no?: string
+  position?: number
+  supplier_name?: string
   required_qty: number
   allocated_qty: number
   dispatched_qty: number
