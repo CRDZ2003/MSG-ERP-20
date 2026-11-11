@@ -891,6 +891,7 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     let line = decodedWords.join(' ')
     // Normalize font artifacts (e.g. en-dash or Greek zeta from custom glyph 0x0396 -> 'I')
     line = line.replace(/[–\u2013\u0396\u0096]/g, 'I').replace(/\s*I\s*/g, 'I').replace(/\u0000/g, '')
+    line = line.replace(/\byt\b/g, '&').replace(/yf/g, ')')
     return line
   }
 
@@ -1069,11 +1070,11 @@ export async function parseCustomerSOPDF(file: File): Promise<{
       typeStr = 'CPL'
     }
 
-    const ratingM = d.match(/(\d{3,4})#|\b(\d{3,4})\s*LB\b/)
-    const ratingStr = ratingM ? (ratingM[1] || ratingM[2]) : ''
+    const ratingM = d.match(/(150|300|600|900|1500|2500|3000|6000|9000)\s*(?:#|LB|LBS|CLASS)?/)
+    const ratingStr = ratingM ? ratingM[1] : ''
 
-    const matM = d.match(/\b(A105N|A105|LF2|WPB|WPL6|SS316L|SS316|A350|A420|A516)\b/)
-    const matStr = matM ? matM[1] : ''
+    const matM = d.match(/(A105N?|A350\s*(?:GR\.?)?\s*LF2|A420\s*(?:GR\.?)?\s*WPL6|A234\s*(?:GR\.?)?\s*WPB|A182\s*(?:GR\.?)?\s*F\d+|B564|A516\s*(?:GR\.?)?\s*70)/i)
+    const matStr = matM ? matM[1].replace(/\s+/g, '') : ''
 
     const parts = [typeStr, sizeStr, ratingStr, matStr].filter(Boolean)
     return parts.join('-') || `ITEM-${pos.toString().padStart(2, '0')}`
@@ -1093,159 +1094,193 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     purchaseType?: 'regular' | 'local_purchase'
   }[] = []
 
-  // Locate start of items table (skip headers)
-  let tableStart = 0
-  for (let idx = 0; idx < lines.length; idx++) {
-    if (/#\s*item\s*&|item\s*no\s*qty/i.test(lines[idx])) {
-      tableStart = idx + 1
+  let i = 0
+
+  // Advance past initial preamble until first table header (Amount, Item No, Qty, Rate)
+  while (i < lines.length) {
+    if (/^(?:Amount|Item\s*No|Qty|Rate)$/i.test(lines[i])) {
+      i++
       break
     }
+    i++
   }
 
-  let i = tableStart
   while (i < lines.length) {
     const line = lines[i]
 
-    // Stop if table footer or order totals reached
-    if (/^(?:sub\s*total|total|standard\s*rate|vat|amount\s*in\s*words)/i.test(line)) {
-      break
+    // Skip order totals, subtotal, and VAT lines
+    if (/^(?:total|amount\s*in\s*words|sub\s*total|standard\s*rate|vat)/i.test(line)) {
+      i++
+      continue
     }
 
-    // Check if line begins a new item row:
-    // Case A: Line starts with row number (e.g. "1 3/4\", SPECTACLE BLIND..." or "2 LTO156KA350LF2")
-    // Case B: Line IS an item code (e.g. "LTO156KA350LF2" or "LEL9025SXXSWPB")
-    // Case C: Standalone row number "1" followed by item code or desc on next line
-    const mRow = line.match(/^(\d{1,3})\s+(.*)$/)
+    // Skip repeat page header lines
+    if (/^(?:#|Item\s*&?\s*Description|Client\s*PO|Item\s*No|Qty|Rate|Amount)$/i.test(line)) {
+      i++
+      continue
+    }
+
+    // Check if line is a page number right before a table header: e.g. "2" followed by "#" or "Item"
+    if (/^\d{1,3}$/.test(line) && i + 1 < lines.length && /^(?:#|Item)/i.test(lines[i + 1])) {
+      i += 2
+      continue
+    }
+
     let pos: number | null = null
-    let firstToken: string | null = null
-    let restText: string | null = null
+    let code: string | null = null
+    let initialDesc: string | null = null
 
-    if (mRow) {
-      pos = parseInt(mRow[1], 10)
-      const content = mRow[2].trim()
-      const spaceIdx = content.indexOf(' ')
-      const candidateCode = spaceIdx > 0 ? content.substring(0, spaceIdx) : content
-
+    const mCombined = line.match(/^(\d{1,3})\s+(.*)$/)
+    if (mCombined) {
+      pos = parseInt(mCombined[1], 10)
+      const rest = mCombined[2].trim()
+      const spaceIdx = rest.indexOf(' ')
+      const candidateCode = spaceIdx > 0 ? rest.substring(0, spaceIdx) : rest
       if (isItemCode(candidateCode)) {
-        firstToken = candidateCode
-        restText = spaceIdx > 0 ? content.substring(spaceIdx + 1).trim() : ''
-      } else if (isItemCode(content)) {
-        firstToken = content
-        restText = ''
+        code = candidateCode
+        initialDesc = spaceIdx > 0 ? rest.substring(spaceIdx + 1).trim() : ''
+      } else if (isItemCode(rest)) {
+        code = rest
+        initialDesc = ''
       } else {
-        // Direct item description without separate code (e.g. "3/4\", SPECTACLE BLIND...")
-        firstToken = null
-        restText = content
+        code = null
+        initialDesc = rest
+      }
+      i++
+    } else if (/^\d{1,3}$/.test(line)) {
+      pos = parseInt(line, 10)
+      i++
+      if (i < lines.length) {
+        const nextLine = lines[i]
+        if (isItemCode(nextLine)) {
+          code = nextLine
+          i++
+        } else if (!/^\d+(?:\.\d+)?$/.test(nextLine) && !/^(?:#|Item|Qty|Rate|Amount)/i.test(nextLine)) {
+          code = null
+          initialDesc = nextLine
+          i++
+        }
       }
     } else if (isItemCode(line)) {
       pos = items.length + 1
-      firstToken = line
-      restText = ''
-    } else if (/^\d{1,3}$/.test(line) && i + 1 < lines.length) {
-      pos = parseInt(line, 10)
+      code = line
       i++
-      const nextL = lines[i]
-      if (isItemCode(nextL)) {
-        firstToken = nextL
-        restText = ''
-      } else {
-        firstToken = null
-        restText = nextL
-      }
     } else {
       i++
       continue
     }
 
-    let code = firstToken
-    let descLines: string[] = restText ? [restText] : []
+    // Collect subsequent lines belonging to this item
+    const descLines: string[] = initialDesc ? [initialDesc] : []
+    const numTokens: string[] = []
     let heatNumber: string | undefined = undefined
     let location: string | undefined = undefined
-    let qty = 1
-    let rate = 0
-    let clientPoItemNo = pos ? String(pos) : ''
 
-    // Collect subsequent lines belonging to this item
-    let j = i + 1
-    while (j < lines.length) {
-      const nextL = lines[j]
+    while (i < lines.length) {
+      const cur = lines[i]
 
-      // Stop conditions for current item
-      if (/^(?:sub\s*total|total|standard\s*rate|vat|amount\s*in\s*words)/i.test(nextL)) {
-        break
-      }
+      // Stop on totals or repeat headers
+      if (/^(?:total|amount\s*in\s*words|sub\s*total|standard\s*rate|vat)/i.test(cur)) break
+      if (/^(?:#|Item\s*&?\s*Description|Client\s*PO)/i.test(cur)) break
 
-      // Check if next item row starts
-      const mNextRow = nextL.match(/^(\d{1,3})\s+(.*)$/)
-      if (mNextRow) {
-        const nextNum = parseInt(mNextRow[1], 10)
-        const nextContent = mNextRow[2].trim()
-        const firstWord = nextContent.split(/\s+/)[0]
-        if (nextNum === pos + 1 || isItemCode(firstWord) || !/^[\d\s,.]+$/.test(nextContent)) {
+      // Stop if next item start: e.g. standalone "2", "3" or "2 Code"
+      if (/^\d{1,3}$/.test(cur)) {
+        const nextPos = parseInt(cur, 10)
+        if (nextPos === (pos || 0) + 1) {
+          break
+        }
+        if (i + 1 < lines.length && /^(?:#|Item)/i.test(lines[i + 1])) {
           break
         }
       }
-      if (isItemCode(nextL)) {
+
+      const mNextComb = cur.match(/^(\d{1,3})\s+(.*)$/)
+      if (mNextComb) {
+        const nextPos = parseInt(mNextComb[1], 10)
+        if (nextPos === (pos || 0) + 1 || isItemCode(mNextComb[2].split(/\s+/)[0])) {
+          break
+        }
+      }
+
+      if (isItemCode(cur)) {
         break
       }
 
       // Heat number detection
-      const heatMatch = nextL.match(/HEAT\s*(?:NO|NUMBER|#)?[\s:]+([A-Za-z0-9\-_]+)/i)
+      const heatMatch = cur.match(/HEAT\s*(?:NO|NUMBER|#)?[\s:]+([A-Za-z0-9\-_]+)/i)
       if (heatMatch) heatNumber = heatMatch[1].trim()
 
       // Location detection
-      const locMatch = nextL.match(/LN[\s:]+([A-Za-z0-9\-_]+)/i) || nextL.match(/LOC[\s:]+([A-Za-z0-9\-_]+)/i)
+      const locMatch = cur.match(/LN[\s:]+([A-Za-z0-9\-_]+)/i) || cur.match(/LOC[\s:]+([A-Za-z0-9\-_]+)/i)
       if (locMatch) location = locMatch[1].trim()
 
-      // Check for Client PO + Qty + Rate + Amount line (e.g. "10000 3.00 150.00 450.00")
-      const mFullNum = nextL.match(/^(\d{3,6})\s+(\d+(?:\.\d{1,2})?)\s+([\d,]+(?:\.\d{2})?)\s+([\d,]+(?:\.\d{2})?)$/)
-      if (mFullNum) {
-        clientPoItemNo = mFullNum[1]
-        qty = Math.round(parseFloat(mFullNum[2]))
-        rate = parseFloat(mFullNum[3].replace(/,/g, '')) || 0
-        j++
+      // Check if unit (e.g. pcs, ea, nos)
+      if (/^(?:pcs|ea|nos|meters?)$/i.test(cur)) {
+        i++
         continue
       }
 
-      // Check for Client PO + Qty line (e.g. "20000 2.00" or "1 1.00")
-      const mPoQty = nextL.match(/^(\d{1,6})\s+(\d+(?:\.\d{1,2})?)$/)
-      if (mPoQty) {
-        clientPoItemNo = mPoQty[1]
-        qty = Math.round(parseFloat(mPoQty[2]))
-        j++
+      // Check if line contains numbers (Client PO, Qty, Rate, Amount)
+      const tokens = cur.split(/\s+/)
+      const isAllNumericTokens = tokens.length > 0 && tokens.every(t => /^[\d,]+(?:\.\d+)?$/.test(t) || /^(?:pcs|ea|nos)$/i.test(t))
+      if (isAllNumericTokens) {
+        for (const t of tokens) {
+          if (!/^(?:pcs|ea|nos)$/i.test(t)) {
+            numTokens.push(t.replace(/,/g, ''))
+          }
+        }
+        i++
         continue
       }
 
-      // Check for Rate + Amount line (e.g. "945.00 1,890.00" or "135.00 135.00")
-      const mRateAmt = nextL.match(/^([\d,]+(?:\.\d{2})?)\s+([\d,]+(?:\.\d{2})?)$/)
-      if (mRateAmt) {
-        rate = parseFloat(mRateAmt[1].replace(/,/g, '')) || 0
-        j++
-        continue
+      // Otherwise it's description
+      if (!heatMatch && !locMatch && cur.length > 2) {
+        descLines.push(cur)
       }
-
-      // Check for standalone quantity (e.g. "3.00" or "1.00 pcs")
-      const mQtySingle = nextL.match(/^(\d+(?:\.\d{1,2})?)\s*(?:pcs|ea|nos)?$/i)
-      if (mQtySingle && qty === 1 && !nextL.includes(',')) {
-        qty = Math.round(parseFloat(mQtySingle[1]))
-        j++
-        continue
-      }
-
-      const isNoise = /^(?:pcs|ea|nos|set|rate|qty|amount)/i.test(nextL)
-      const isPurePrice = /^[\d\s,.\u0600-\u06FFAEDUS$€£\-\/]+$/.test(nextL.trim())
-
-      if (!heatMatch && !locMatch && !isNoise && !isPurePrice && nextL.length > 2) {
-        descLines.push(nextL)
-      }
-
-      j++
+      i++
     }
 
-    i = j
-    let itemDesc = descLines.join(' ').trim()
+    let clientPoItemNo = pos ? String(pos) : ''
+    let qty = 1
+    let rate = 0
+
+    if (numTokens.length >= 4) {
+      clientPoItemNo = numTokens[0]
+      qty = Math.round(parseFloat(numTokens[1])) || 1
+      rate = parseFloat(numTokens[2]) || 0
+    } else if (numTokens.length === 3) {
+      const n0 = parseFloat(numTokens[0])
+      const n1 = parseFloat(numTokens[1])
+      const n2 = parseFloat(numTokens[2])
+      if (Math.abs(n0 * n1 - n2) < 0.1 || (n0 > 0 && n0 < 1000 && n1 > 0 && n2 >= n1)) {
+        qty = Math.round(n0) || 1
+        rate = n1
+      } else {
+        clientPoItemNo = numTokens[0]
+        qty = Math.round(n1) || 1
+        rate = n2
+      }
+    } else if (numTokens.length === 2) {
+      const n0 = parseFloat(numTokens[0])
+      const n1 = parseFloat(numTokens[1])
+      if (Number.isInteger(n0) && n0 <= 500 && n1 <= 1000) {
+        clientPoItemNo = numTokens[0]
+        qty = Math.round(n1) || 1
+      } else {
+        qty = Math.round(n0) || 1
+        rate = n1
+      }
+    } else if (numTokens.length === 1) {
+      qty = Math.round(parseFloat(numTokens[0])) || 1
+    }
+
+    let itemDesc = descLines.join(' ').replace(/\s{2,}/g, ' ').trim()
+    if (/DISCOUNT/i.test(itemDesc)) {
+      continue
+    }
+
     if (!code) {
-      code = synthesizeItemCode(itemDesc, pos)
+      code = synthesizeItemCode(itemDesc, pos || items.length + 1)
     }
     if (!itemDesc) {
       itemDesc = `${code} Oilfield Fitting / Material`
@@ -1258,13 +1293,13 @@ export async function parseCustomerSOPDF(file: File): Promise<{
     )
 
     items.push({
-      position: pos,
+      position: pos || items.length + 1,
       itemCode: code,
       itemDescription: itemDesc,
       heatNumber,
       location,
       requiredQty: qty || 1,
-      clientPoItemNo: clientPoItemNo || String(pos),
+      clientPoItemNo: clientPoItemNo || String(pos || items.length + 1),
       rate,
       purchaseType: isLocal ? 'local_purchase' : 'regular'
     })

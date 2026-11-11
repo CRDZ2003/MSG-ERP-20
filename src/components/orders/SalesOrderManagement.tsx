@@ -1334,6 +1334,11 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                                 <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-xs font-mono font-bold">
                                   #{it.position || idx + 1}
                                 </span>
+                                {it.clientPoItemNo && (
+                                  <span className="block text-[10px] text-slate-500 font-mono mt-0.5" title="Client PO Item Number">
+                                    PO #{it.clientPoItemNo}
+                                  </span>
+                                )}
                               </td>
                               <td className="p-2">
                                 <input
