@@ -1342,9 +1342,28 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                       <button
                         type="button"
                         onClick={() => {
+                          const nextPos = (pdfParsedData.items.length > 0
+                            ? Math.max(...pdfParsedData.items.map((x: any) => x.position || 0)) + 1
+                            : 1)
                           setPdfParsedData({
                             ...pdfParsedData,
-                            items: [...pdfParsedData.items, { itemCode: 'WSO15150F316', requiredQty: 5 }]
+                            items: [
+                              ...pdfParsedData.items,
+                              {
+                                position: nextPos,
+                                clientPoItemNo: String(nextPos),
+                                itemCode: '',
+                                itemDescription: '',
+                                heatNumber: '',
+                                locationCode: '',
+                                requiredQty: 1,
+                                make: '',
+                                supplierName: '',
+                                packageType: 'Pallet',
+                                packageNo: '1',
+                                is_new_added: true,
+                              } as any
+                            ]
                           })
                         }}
                         className="text-red-600 hover:text-red-700 font-semibold text-[11px]"
@@ -1367,11 +1386,16 @@ export const SalesOrderManagement: React.FC<SalesOrderManagementProps> = ({
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {pdfParsedData.items.map((it, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50">
+                            <tr key={idx} className={`hover:bg-slate-50/50 ${(it as any).is_new_added ? 'bg-red-50/20' : ''}`}>
                               <td className="p-2 text-center">
                                 <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-xs font-mono font-bold">
                                   #{it.position || idx + 1}
                                 </span>
+                                {(it as any).is_new_added && (
+                                  <span className="block text-[8px] font-bold text-red-600 bg-red-100/80 border border-red-300 px-1 py-0.5 rounded uppercase tracking-tight mt-0.5 whitespace-nowrap leading-none">
+                                    new added
+                                  </span>
+                                )}
                                 {it.clientPoItemNo && (
                                   <span className="block text-[10px] text-slate-500 font-mono mt-0.5" title="Client PO Item Number">
                                     PO #{it.clientPoItemNo}

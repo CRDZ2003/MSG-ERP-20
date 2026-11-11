@@ -352,28 +352,30 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
   // Add Item Row
   const handleAddRow = () => {
     const newSl = items.length + 1
-    const newItem: SourcingLineItem = {
+    const newItem: SourcingLineItem & { is_new_added?: boolean } = {
       id: `ITEM-NEW-${Date.now()}`,
       sl_no: newSl,
       client_po_item_no: String(newSl),
-      description: 'NEW OILFIELD MATERIAL FITTING',
+      description: '',
       qty: 1,
       uom: 'PCS',
       heat_number: '',
       certificate_number: '',
-      make: 'BENKAN THAILAND',
+      make: '',
       remarks: '',
-      supplier_name: 'BENKAN CORP',
-      supplier_po_number: `MSG-PO-${(msgRef || order.so_number).replace(/[^0-9]/g, '').slice(-4) || '1844'}`,
+      supplier_name: '',
+      supplier_po_number: '',
       hs_code: '7307.93.00',
-      country_of_origin: 'Thailand',
-      unit_price: 100,
-      total_price: 100,
-      unit_weight_kg: 1.0,
-      total_net_weight_kg: 1.0,
-      total_gross_weight_kg: 1.1,
-      package_no: `BOX-${Math.floor(items.length / 3) + 1}`,
+      country_of_origin: '',
+      unit_price: 0,
+      total_price: 0,
+      unit_weight_kg: 0,
+      total_net_weight_kg: 0,
+      total_gross_weight_kg: 0,
+      package_type: 'Pallet',
+      package_no: '1',
       is_machined: false,
+      is_new_added: true,
     }
     setItems([...items, newItem])
     setSelectedIds([...selectedIds, newItem.id])
@@ -731,8 +733,9 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                 <tbody className="divide-y divide-slate-100 font-normal">
                   {items.map((it, idx) => {
                     const isSelected = selectedIds.includes(it.id)
+                    const isNewAdded = (it as any).is_new_added || it.id?.startsWith('ITEM-NEW-')
                     return (
-                      <tr key={it.id} className={isSelected ? 'bg-orange-50/30' : 'hover:bg-slate-50/50'}>
+                      <tr key={it.id} className={`${isSelected ? 'bg-orange-50/30' : 'hover:bg-slate-50/50'} ${isNewAdded ? 'bg-red-50/20' : ''}`}>
                         <td className="p-2 text-center">
                           <input
                             type="checkbox"
@@ -742,7 +745,14 @@ export const SummarySheetModal: React.FC<SummarySheetModalProps> = ({
                           />
                         </td>
                         <td className="p-2 text-center font-mono font-bold text-slate-600">
-                          {it.sl_no || idx + 1}
+                          <div className="flex flex-col items-center justify-center">
+                            <span>{it.sl_no || idx + 1}</span>
+                            {isNewAdded && (
+                              <span className="inline-block mt-0.5 text-[8px] font-bold text-red-600 bg-red-100/90 border border-red-300 px-1 py-0.5 rounded uppercase tracking-tight whitespace-nowrap leading-none shadow-xs">
+                                new added
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-2 text-center">
                           <input
