@@ -627,9 +627,20 @@ export const TechnicalSourcingPortal: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {/* 1. Client Summary Excel */}
           <button
-            onClick={() => generateClientSummaryExcel(currentWorksheetData, filterMachinedOnly)}
+            onClick={async () => {
+              setIsExporting(true)
+              try {
+                await generateClientSummaryExcel(currentWorksheetData, filterMachinedOnly)
+                setStatusNotice('Client Summary (.xlsx) exported successfully with finalized layout!')
+              } catch (err: any) {
+                alert('Error exporting Client Summary: ' + err.message)
+              } finally {
+                setIsExporting(false)
+              }
+            }}
+            disabled={isExporting}
             className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs px-3.5 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-colors"
-            title="Download 8-Column Client Summary Sheet (.xlsx)"
+            title="Download 9-Column Client Summary Sheet (.xlsx) matching finalized layout"
           >
             <FileSpreadsheet className="h-4 w-4" />
             <span>Client Summary (.xlsx)</span>
@@ -637,7 +648,18 @@ export const TechnicalSourcingPortal: React.FC = () => {
 
           {/* 2. Stores Internal Excel */}
           <button
-            onClick={() => generateStoresSummaryExcel(currentWorksheetData, filterMachinedOnly)}
+            onClick={async () => {
+              setIsExporting(true)
+              try {
+                await generateStoresSummaryExcel(currentWorksheetData, filterMachinedOnly)
+                setStatusNotice('Internal Stores Summary (.xlsx) exported successfully with finalized layout!')
+              } catch (err: any) {
+                alert('Error exporting Stores Summary: ' + err.message)
+              } finally {
+                setIsExporting(false)
+              }
+            }}
+            disabled={isExporting}
             className="bg-blue-700 hover:bg-blue-600 text-white font-bold text-xs px-3.5 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-colors"
             title="Download 11-Column Stores Summary with Suppliers & Machining (.xlsx)"
           >
@@ -647,9 +669,20 @@ export const TechnicalSourcingPortal: React.FC = () => {
 
           {/* 3. CIPL Generator */}
           <button
-            onClick={() => generateCIPLLogisticExcel(currentWorksheetData)}
+            onClick={async () => {
+              setIsExporting(true)
+              try {
+                await generateCIPLLogisticExcel(currentWorksheetData)
+                setStatusNotice('CIPL Logistics (.xlsx) with INVOICE & PACKING LIST exported successfully!')
+              } catch (err: any) {
+                alert('Error exporting CIPL: ' + err.message)
+              } finally {
+                setIsExporting(false)
+              }
+            }}
+            disabled={isExporting}
             className="bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs px-3.5 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-colors"
-            title="Download Commercial Invoice & Packing List (.xlsx)"
+            title="Download Commercial Invoice & Packing List (.xlsx) matching finalized layout"
           >
             <Truck className="h-4 w-4" />
             <span>CIPL Logistics (.xlsx)</span>
