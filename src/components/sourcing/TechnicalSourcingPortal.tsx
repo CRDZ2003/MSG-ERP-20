@@ -153,9 +153,14 @@ export const TechnicalSourcingPortal: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false)
   const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false)
   const [draftsList, setDraftsList] = useState<SourcingWorksheetData[]>([])
+  const [selectedOrderId, setSelectedOrderId] = useState<string>(() => existingOrders[0]?.id || '')
 
   useEffect(() => {
     setDraftsList(getSourcingDrafts())
+    const orders = db.getOrders()
+    if (orders.length > 0) {
+      handleLoadFromOrder(orders[0].id)
+    }
   }, [])
 
   // Auto-clear notice after 4 seconds
@@ -242,6 +247,7 @@ export const TechnicalSourcingPortal: React.FC = () => {
     const order = existingOrders.find(o => o.id === orderId)
     if (!order) return
 
+    setSelectedOrderId(orderId)
     setClientName(order.customer_name)
     setPoNumber(order.po_number)
     setMsgRef(order.so_number)
@@ -441,8 +447,9 @@ export const TechnicalSourcingPortal: React.FC = () => {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center space-x-3 mb-2">
-              <span className="bg-orange-500 text-white text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
-                Integrated from konkanishow-gif/msg123
+              <span className="bg-emerald-600 text-white text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center space-x-1.5 shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-white animate-pulse"></span>
+                <span>Fully Automated Sync</span>
               </span>
               <span className="text-slate-400 text-xs font-mono">Dual Excel &amp; CIPL Engine</span>
             </div>
@@ -450,23 +457,30 @@ export const TechnicalSourcingPortal: React.FC = () => {
               Technical Sourcing, PO Split &amp; CIPL Portal
             </h1>
             <p className="text-sm text-slate-300 mt-1 max-w-3xl">
-              Extract customer POs, manage item splits across multiple heat numbers, auto-detect machining &amp; HS codes,
-              and export publication-quality Client Summary, Internal Stores Excel, CIPL Logistics, and Supplier PO packages.
+              Line items are automatically populated from the uploaded Sales Order in exact position order without repeats.
+              Manage multi-heat splits, auto-detect HS codes &amp; weights, and export publication-quality Client Summary, Internal Stores Excel, CIPL Logistics, and Supplier PO packages.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <label className="cursor-pointer bg-orange-600 hover:bg-orange-500 text-white font-semibold text-xs px-3.5 py-2 rounded-lg flex items-center space-x-1.5 transition-colors shadow-sm">
-              <Upload className="h-4 w-4" />
-              <span>{isUploading ? 'Extracting PDF...' : 'Upload SO PDF'}</span>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handlePDFUpload}
-                disabled={isUploading}
-                className="hidden"
-              />
-            </label>
+            {/* Unified Active Sales Order Selector */}
+            <div className="bg-slate-800/90 border border-slate-600 rounded-lg px-3 py-1.5 flex items-center space-x-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase shrink-0">Active SO:</span>
+              <select
+                value={selectedOrderId}
+                onChange={e => {
+                  setSelectedOrderId(e.target.value)
+                  handleLoadFromOrder(e.target.value)
+                }}
+                className="bg-transparent text-white text-xs font-semibold focus:outline-none cursor-pointer max-w-[220px] truncate"
+              >
+                {existingOrders.map(o => (
+                  <option key={o.id} value={o.id} className="bg-slate-900 text-white">
+                    {o.so_number} - {o.po_number} ({o.customer_name})
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <button
               onClick={handleSaveDraft}
@@ -528,15 +542,14 @@ export const TechnicalSourcingPortal: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Load Existing Order</label>
+          <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Loaded Sales Order</label>
           <select
+            value={selectedOrderId}
             onChange={e => {
               if (e.target.value) handleLoadFromOrder(e.target.value)
             }}
-            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 bg-slate-50 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-            defaultValue=""
+            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 bg-emerald-50/50 border-emerald-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
           >
-            <option value="" disabled>Select Sales Order...</option>
             {existingOrders.map(o => (
               <option key={o.id} value={o.id}>
                 {o.so_number} - {o.customer_name} ({o.items.length} items)

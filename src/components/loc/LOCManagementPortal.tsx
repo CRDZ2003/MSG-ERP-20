@@ -102,6 +102,10 @@ export const LOCManagementPortal: React.FC = () => {
 
   useEffect(() => {
     setDrafts(getLOCDrafts())
+    const orders = db.getOrders()
+    if (orders.length > 0) {
+      handleLoadOrder(orders[0].id)
+    }
   }, [])
 
   const showNotification = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
