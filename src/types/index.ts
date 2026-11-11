@@ -115,6 +115,8 @@ export interface StockAllocation {
   heat_number: string
   mtc_certificate_id?: string
   allocated_qty: number
+  item_code?: string
+  so_item_id?: string
   released_qty: number
   dispatched_qty: number
   allocation_status: 'Allocated' | 'Released' | 'Dispatched'

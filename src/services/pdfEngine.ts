@@ -169,162 +169,90 @@ export async function stampMTCDocument(
 
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica)
-  const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
+  const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique)
 
   const pages = pdfDoc.getPages()
   const sign = options.sign || 'MSG/QC-04'
-  const dateStr = options.dateStr || new Date().toISOString().substring(0, 10).toUpperCase()
 
-  // Stamp Page 1: Large Official Rectangular Stamp
-  if (pages.length > 0) {
-    const page1 = pages[0]
-    const { width } = page1.getSize()
-
-    const stampX = width - 250
-    const stampY = 80
-    const stampW = 210
-    const stampH = 120
-
-    // Outer double border
-    page1.drawRectangle({
-      x: stampX,
-      y: stampY,
-      width: stampW,
-      height: stampH,
-      borderColor: rgb(0.8, 0.1, 0.1), // Oilfield Red Ink
-      borderWidth: 2.5,
-      color: rgb(1, 0.97, 0.97),
-      opacity: 0.92,
-      rotate: degrees(-2),
-    })
-
-    page1.drawRectangle({
-      x: stampX + 3,
-      y: stampY + 3,
-      width: stampW - 6,
-      height: stampH - 6,
-      borderColor: rgb(0.8, 0.1, 0.1),
-      borderWidth: 0.8,
-      rotate: degrees(-2),
-    })
-
-    // Stamp Header
-    page1.drawText('MSG OILFIELD EQUIPMENT TRADING LLC', {
-      x: stampX + 10,
-      y: stampY + stampH - 18,
-      size: 7.5,
-      font: fontBold,
-      color: rgb(0.75, 0.1, 0.1),
-      rotate: degrees(-2),
-    })
-
-    page1.drawText('VERIFIED TRUE COPY / QC APPROVED', {
-      x: stampX + 22,
-      y: stampY + stampH - 30,
-      size: 7,
-      font: fontBold,
-      color: rgb(0.1, 0.2, 0.5), // Navy blue
-      rotate: degrees(-2),
-    })
-
-    // Line items
-    const inkNavy = rgb(0.05, 0.15, 0.5)
-
-    page1.drawText(`P.O. No: ${options.poNo}`, {
-      x: stampX + 12,
-      y: stampY + stampH - 48,
-      size: 8,
-      font: fontBold,
-      color: inkNavy,
-      rotate: degrees(-2),
-    })
-
-    page1.drawText(`ITEM No: ${options.itemNo}`, {
-      x: stampX + 12,
-      y: stampY + stampH - 65,
-      size: 8,
-      font: fontBold,
-      color: inkNavy,
-      rotate: degrees(-2),
-    })
-
-    page1.drawText(`QTY    : ${options.qty} PCS`, {
-      x: stampX + 12,
-      y: stampY + stampH - 82,
-      size: 8,
-      font: fontBold,
-      color: inkNavy,
-      rotate: degrees(-2),
-    })
-
-    page1.drawText(`SIGN   : ${sign}`, {
-      x: stampX + 12,
-      y: stampY + stampH - 98,
-      size: 8,
-      font: fontOblique,
-      color: inkNavy,
-      rotate: degrees(-2),
-    })
-
-    page1.drawText(`DATE   : ${dateStr}`, {
-      x: stampX + 115,
-      y: stampY + stampH - 98,
-      size: 7.5,
-      font: fontRegular,
-      color: inkNavy,
-      rotate: degrees(-2),
-    })
+  // Load transparent official MSG seal
+  let sealImg: any = null
+  try {
+    const sealRes = await fetch('/assets/seal_transparent.png').catch(() => fetch('/seal_transparent.png'))
+    if (sealRes && sealRes.ok) {
+      const buf = await sealRes.arrayBuffer()
+      sealImg = await pdfDoc.embedPng(buf)
+    }
+  } catch (err) {
+    console.warn('Could not load seal_transparent.png', err)
   }
 
-  // Stamp Subsequent Pages: Small Circular Verified Stamp
-  for (let p = 1; p < pages.length; p++) {
+  const redInk = rgb(0.85, 0.05, 0.05)
+  const signInk = rgb(0.05, 0.15, 0.5)
+
+  for (let p = 0; p < pages.length; p++) {
     const page = pages[p]
     const { width } = page.getSize()
 
-    const cx = width - 100
-    const cy = 90
-    const r = 35
+    const stampW = 210
+    const stampH = 210 * (424 / 843) // approx 105.6 pt (matches 843x424 aspect ratio)
+    const stampX = width - stampW - 35
+    const stampY = 55
 
-    page.drawCircle({
-      x: cx,
-      y: cy,
-      size: r,
-      borderColor: rgb(0.8, 0.1, 0.1),
-      borderWidth: 1.8,
-      color: rgb(1, 0.98, 0.98),
-      opacity: 0.9,
-    })
+    if (sealImg) {
+      page.drawImage(sealImg, {
+        x: stampX,
+        y: stampY,
+        width: stampW,
+        height: stampH,
+        opacity: p === 0 ? 0.95 : 0.85,
+      })
+    } else {
+      page.drawRectangle({
+        x: stampX,
+        y: stampY,
+        width: stampW,
+        height: stampH,
+        borderColor: redInk,
+        borderWidth: 2,
+      })
+    }
 
-    page.drawCircle({
-      x: cx,
-      y: cy,
-      size: r - 3,
-      borderColor: rgb(0.8, 0.1, 0.1),
-      borderWidth: 0.6,
-    })
-
-    page.drawText('MSG OILFIELD', {
-      x: cx - 28,
-      y: cy + 12,
-      size: 7,
+    // Autofill Details directly above the dotted lines
+    // Row 2: P O No.
+    page.drawText(options.poNo || '-', {
+      x: stampX + 68,
+      y: stampY + stampH * 0.675,
+      size: 8.5,
       font: fontBold,
-      color: rgb(0.8, 0.1, 0.1),
+      color: redInk,
     })
 
-    page.drawText('VERIFIED', {
-      x: cx - 20,
-      y: cy - 2,
-      size: 7,
+    // Row 3: ITEM No.
+    page.drawText(String(options.itemNo || '-'), {
+      x: stampX + 72,
+      y: stampY + stampH * 0.490,
+      size: 8.5,
       font: fontBold,
-      color: rgb(0.1, 0.2, 0.5),
+      color: redInk,
     })
 
-    page.drawText(dateStr.slice(0, 7), {
-      x: cx - 22,
-      y: cy - 14,
-      size: 6,
-      font: fontRegular,
-      color: rgb(0.2, 0.2, 0.2),
+    // Row 4: QTY
+    const qtyStr = typeof options.qty === 'number' ? `${options.qty} PCS` : String(options.qty || '1 PCS')
+    page.drawText(qtyStr, {
+      x: stampX + 50,
+      y: stampY + stampH * 0.300,
+      size: 8.5,
+      font: fontBold,
+      color: redInk,
+    })
+
+    // Row 4: Sign (in dark ink navy)
+    page.drawText(sign, {
+      x: stampX + 148,
+      y: stampY + stampH * 0.300,
+      size: 8.5,
+      font: fontOblique,
+      color: signInk,
     })
   }
 
@@ -344,6 +272,7 @@ export async function mergeSalesOrderMTCPackage(
     qty: number
     isLocal: boolean
     pages: number
+    itemNo?: string
   }[]
 ): Promise<Uint8Array> {
   const mergedPdf = await PDFDocument.create()
@@ -508,7 +437,7 @@ export async function mergeSalesOrderMTCPackage(
     if (realBytes) {
       const stampedBytes = await stampMTCDocument(realBytes, {
         poNo: poNumber,
-        itemNo: `Item #${idx + 1}`,
+        itemNo: certItem.itemNo || `${idx + 1}`,
         qty: certItem.qty,
         sign: 'MSG/QC-04',
         dateStr: new Date().toISOString().substring(0, 10).toUpperCase(),
