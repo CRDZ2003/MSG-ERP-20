@@ -174,8 +174,9 @@ export async function stampMTCDocument(
   const pages = pdfDoc.getPages()
   const sign = options.sign || 'MSG/QC-04'
 
-  // Load transparent official MSG seal
+  // Load transparent official MSG seals (rectangular for Page 1, round for subsequent pages)
   let sealImg: any = null
+  let roundSealImg: any = null
   try {
     const sealRes = await fetch('/assets/seal_transparent.png').catch(() => fetch('/seal_transparent.png'))
     if (sealRes && sealRes.ok) {
@@ -186,74 +187,121 @@ export async function stampMTCDocument(
     console.warn('Could not load seal_transparent.png', err)
   }
 
+  try {
+    const roundRes = await fetch('/assets/seal_round_transparent.png').catch(() => fetch('/seal_round_transparent.png'))
+    if (roundRes && roundRes.ok) {
+      const buf = await roundRes.arrayBuffer()
+      roundSealImg = await pdfDoc.embedPng(buf)
+    }
+  } catch (err) {
+    console.warn('Could not load seal_round_transparent.png', err)
+  }
+
   const redInk = rgb(0.85, 0.05, 0.05)
   const signInk = rgb(0.05, 0.15, 0.5)
 
   for (let p = 0; p < pages.length; p++) {
     const page = pages[p]
-    const { width } = page.getSize()
+    const { width, height } = page.getSize()
 
-    const stampW = 210
-    const stampH = 210 * (424 / 843) // approx 105.6 pt (matches 843x424 aspect ratio)
-    const stampX = width - stampW - 35
-    const stampY = 55
+    if (p === 0) {
+      // PAGE 1: Official Rectangular "VERIFIED TRUE COPY" with Full Details
+      const stampW = Math.min(210, width * 0.42)
+      const stampH = stampW * (424 / 843)
+      const stampX = width - stampW - Math.min(35, width * 0.05)
+      const stampY = Math.min(55, height * 0.08)
+      const scale = stampW / 210
 
-    if (sealImg) {
-      page.drawImage(sealImg, {
-        x: stampX,
-        y: stampY,
-        width: stampW,
-        height: stampH,
-        opacity: p === 0 ? 0.95 : 0.85,
+      if (sealImg) {
+        page.drawImage(sealImg, {
+          x: stampX,
+          y: stampY,
+          width: stampW,
+          height: stampH,
+          opacity: 0.95,
+        })
+      } else {
+        page.drawRectangle({
+          x: stampX,
+          y: stampY,
+          width: stampW,
+          height: stampH,
+          borderColor: redInk,
+          borderWidth: 2,
+        })
+      }
+
+      // Autofill Details directly above the dotted lines
+      // Row 2: P O No.
+      page.drawText(options.poNo || '-', {
+        x: stampX + 68 * scale,
+        y: stampY + stampH * 0.675,
+        size: 8.5 * scale,
+        font: fontBold,
+        color: redInk,
+      })
+
+      // Row 3: ITEM No.
+      page.drawText(String(options.itemNo || '-'), {
+        x: stampX + 72 * scale,
+        y: stampY + stampH * 0.490,
+        size: 8.5 * scale,
+        font: fontBold,
+        color: redInk,
+      })
+
+      // Row 4: QTY
+      const qtyStr = typeof options.qty === 'number' ? `${options.qty} PCS` : String(options.qty || '1 PCS')
+      page.drawText(qtyStr, {
+        x: stampX + 50 * scale,
+        y: stampY + stampH * 0.300,
+        size: 8.5 * scale,
+        font: fontBold,
+        color: redInk,
+      })
+
+      // Row 4: Sign (in dark ink navy)
+      page.drawText(sign, {
+        x: stampX + 148 * scale,
+        y: stampY + stampH * 0.300,
+        size: 8.5 * scale,
+        font: fontOblique,
+        color: signInk,
       })
     } else {
-      page.drawRectangle({
-        x: stampX,
-        y: stampY,
-        width: stampW,
-        height: stampH,
-        borderColor: redInk,
-        borderWidth: 2,
+      // SUBSEQUENT PAGES (Page 2, 3...): Official Round Seal with "VERIFIED TRUE COPY" & Sign Line
+      const roundSize = Math.min(130, width * 0.25, height * 0.22)
+      const roundX = width - roundSize - Math.min(35, width * 0.05)
+      const roundY = Math.min(50, height * 0.07)
+
+      if (roundSealImg) {
+        page.drawImage(roundSealImg, {
+          x: roundX,
+          y: roundY,
+          width: roundSize,
+          height: roundSize,
+          opacity: 0.92,
+        })
+      } else {
+        // Fallback circle if image not loaded
+        page.drawCircle({
+          x: roundX + roundSize / 2,
+          y: roundY + roundSize / 2,
+          size: roundSize / 2,
+          borderColor: redInk,
+          borderWidth: 2,
+        })
+      }
+
+      // Autofill Sign on the round seal dotted line (baseline is y = 0.298 * roundSize)
+      page.drawText(sign, {
+        x: roundX + roundSize * 0.46,
+        y: roundY + roundSize * 0.298,
+        size: Math.max(7, roundSize * 0.072),
+        font: fontOblique,
+        color: signInk,
       })
     }
-
-    // Autofill Details directly above the dotted lines
-    // Row 2: P O No.
-    page.drawText(options.poNo || '-', {
-      x: stampX + 68,
-      y: stampY + stampH * 0.675,
-      size: 8.5,
-      font: fontBold,
-      color: redInk,
-    })
-
-    // Row 3: ITEM No.
-    page.drawText(String(options.itemNo || '-'), {
-      x: stampX + 72,
-      y: stampY + stampH * 0.490,
-      size: 8.5,
-      font: fontBold,
-      color: redInk,
-    })
-
-    // Row 4: QTY
-    const qtyStr = typeof options.qty === 'number' ? `${options.qty} PCS` : String(options.qty || '1 PCS')
-    page.drawText(qtyStr, {
-      x: stampX + 50,
-      y: stampY + stampH * 0.300,
-      size: 8.5,
-      font: fontBold,
-      color: redInk,
-    })
-
-    // Row 4: Sign (in dark ink navy)
-    page.drawText(sign, {
-      x: stampX + 148,
-      y: stampY + stampH * 0.300,
-      size: 8.5,
-      font: fontOblique,
-      color: signInk,
-    })
   }
 
   return await pdfDoc.save()

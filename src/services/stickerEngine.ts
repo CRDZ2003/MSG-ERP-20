@@ -49,6 +49,31 @@ export function parseLocFromRemarks(rem1?: string, rem2?: string): string {
   return candidates.length > 0 ? candidates.join(' / ') : 'LOCATION-1'
 }
 
+function drawAutoFitText(
+  page: any,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  font: any,
+  defaultSize: number = 7.3,
+  minSize: number = 5.0,
+  color: any = rgb(0, 0, 0)
+) {
+  if (!text) return
+  const clean = text.replace(/[\r\n]+/g, ' ').trim()
+  let size = defaultSize
+  try {
+    const textW = font.widthOfTextAtSize(clean, defaultSize)
+    if (textW > maxWidth) {
+      size = Math.max(minSize, defaultSize * (maxWidth / textW))
+    }
+  } catch (e) {
+    size = defaultSize
+  }
+  page.drawText(clean, { x, y, size, font, color })
+}
+
 function wrapTextIntoLines(
   text: string,
   maxWidth: number,
@@ -79,6 +104,45 @@ function wrapTextIntoLines(
     lines.push(current)
   }
   return lines
+}
+
+function wrapTextIntoLinesWithFit(
+  text: string,
+  maxWidth: number,
+  font: any,
+  initialFontSize: number = 7.3,
+  maxLines: number = 3
+): { lines: string[]; fontSize: number } {
+  if (!text) return { lines: [], fontSize: initialFontSize }
+  const clean = text.replace(/[\r\n]+/g, ' ').trim()
+
+  for (let sz = initialFontSize; sz >= 5.0; sz -= 0.3) {
+    const words = clean.split(' ')
+    const lines: string[] = []
+    let current = ''
+    let fits = true
+
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word
+      const w = font.widthOfTextAtSize(test, sz)
+      if (w <= maxWidth) {
+        current = test
+      } else {
+        if (current) lines.push(current)
+        current = word
+        if (lines.length === maxLines) {
+          fits = false
+          break
+        }
+      }
+    }
+    if (current) lines.push(current)
+    if (fits && lines.length <= maxLines) {
+      return { lines, fontSize: sz }
+    }
+  }
+
+  return { lines: wrapTextIntoLines(clean, maxWidth, font, 5.0, maxLines), fontSize: 5.0 }
 }
 
 // Parse Excel file into StickerDocumentData (supports SUMMARY SHEET, Stores Summary, Client Summary)
@@ -244,30 +308,11 @@ export async function generateStickersPdf(
     const certStr = item.certificate_number || '-'
     const remarksStr = item.remarks || item.location || 'LOCATION-1'
 
-    // 1. Header (Left, Times-Bold 7.3 pt)
-    page.drawText(clientName, {
-      x: 5.67,
-      y: 97.58,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
-
-    page.drawText(`PO Number: ${poNumber}`, {
-      x: 5.67,
-      y: 89.19,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
-
-    page.drawText(`ITEM NO: ${itemNo}`, {
-      x: 5.67,
-      y: 80.79,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
+    // 1. Header (Left, Times-Bold 7.3 pt with Autofit, max width 114 pt to avoid overlapping logo)
+    const headerMaxWidth = 114.0
+    drawAutoFitText(page, clientName, 5.67, 97.58, headerMaxWidth, fontBold, 7.3, 5.0)
+    drawAutoFitText(page, `PO Number: ${poNumber}`, 5.67, 89.19, headerMaxWidth, fontBold, 7.3, 5.0)
+    drawAutoFitText(page, `ITEM NO: ${itemNo}`, 5.67, 80.79, headerMaxWidth, fontBold, 7.3, 5.0)
 
     // 2. Logo (Top Right: x=121.89, y=86.46, w=34.02, h=19.84)
     if (embeddedLogo) {
@@ -279,61 +324,29 @@ export async function generateStickersPdf(
       })
     }
 
-    // 3. Description (Wrapped into up to 3 lines, starting at y=69.48, deltaY=8.40)
+    // 3. Description (Wrapped into up to 3 lines with dynamic autofit font size)
     const maxWidth = 153.07
-    const descLines = wrapTextIntoLines(item.description, maxWidth, fontBold, 7.3, 3)
+    const { lines: descLines, fontSize: descFontSize } = wrapTextIntoLinesWithFit(item.description, maxWidth, fontBold, 7.3, 3)
     let yDesc = 69.48
+    const lineSpacing = Math.min(8.40, descFontSize * 1.15)
     for (const dLine of descLines) {
       page.drawText(dLine, {
         x: 5.67,
         y: yDesc,
-        size: 7.3,
+        size: descFontSize,
         font: fontBold,
         color: rgb(0, 0, 0),
       })
-      yDesc -= 8.40
+      yDesc -= lineSpacing
     }
 
-    // 4. Specifications (Times-Bold 7.3 pt)
-    page.drawText(`PO QTY: ${qtyStr} ${uomStr}`, {
-      x: 5.67,
-      y: 40.64,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
-
-    page.drawText(`HEAT NUMBER: ${heatStr}`, {
-      x: 5.67,
-      y: 32.25,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
-
-    page.drawText(`MAKE: ${makeStr}`, {
-      x: 5.67,
-      y: 23.85,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
-
-    page.drawText(`CERTIFICATE NO: ${certStr}`, {
-      x: 5.67,
-      y: 15.46,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
-
-    page.drawText(`Remarks: ${remarksStr}`, {
-      x: 5.67,
-      y: 7.06,
-      size: 7.3,
-      font: fontBold,
-      color: rgb(0, 0, 0),
-    })
+    // 4. Specifications (Times-Bold 7.3 pt with Autofit)
+    const specMaxWidth = 130.0 // Leaves room for QR code on bottom right
+    drawAutoFitText(page, `PO QTY: ${qtyStr} ${uomStr}`, 5.67, 40.64, 153.0, fontBold, 7.3, 5.0)
+    drawAutoFitText(page, `HEAT NUMBER: ${heatStr}`, 5.67, 32.25, specMaxWidth, fontBold, 7.3, 5.0)
+    drawAutoFitText(page, `MAKE: ${makeStr}`, 5.67, 23.85, specMaxWidth, fontBold, 7.3, 5.0)
+    drawAutoFitText(page, `CERTIFICATE NO: ${certStr}`, 5.67, 15.46, specMaxWidth, fontBold, 7.3, 5.0)
+    drawAutoFitText(page, `Remarks: ${remarksStr}`, 5.67, 7.06, specMaxWidth, fontBold, 7.3, 5.0)
 
     // 5. QR Code (Bottom Right: x=138.90, y=5.67, w=17.01, h=17.01)
     try {

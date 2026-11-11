@@ -209,7 +209,34 @@ const initialOrders: SalesOrder[] = [
         remarks: 'LOCATION-1',
       } as any,
     ],
-    allocations: []
+    allocations: [
+      {
+        id: 'ALC-STS-1',
+        sales_order_item_id: 'SOI-STS-17',
+        sales_order_id: 'ORD-STS',
+        stock_lot_id: 'LOT-006',
+        heat_number: 'EY7',
+        allocated_qty: 8,
+        released_qty: 8,
+        dispatched_qty: 0,
+        allocation_status: 'Allocated',
+        created_at: '2026-03-26',
+        updated_at: '2026-03-26',
+      },
+      {
+        id: 'ALC-STS-2',
+        sales_order_item_id: 'SOI-STS-27',
+        sales_order_id: 'ORD-STS',
+        stock_lot_id: 'LOT-007',
+        heat_number: '67M01M085',
+        allocated_qty: 4,
+        released_qty: 4,
+        dispatched_qty: 0,
+        allocation_status: 'Allocated',
+        created_at: '2026-03-26',
+        updated_at: '2026-03-26',
+      }
+    ]
   },
   {
     id: 'ORD-VALORIS',
@@ -262,7 +289,34 @@ const initialOrders: SalesOrder[] = [
         remarks: 'Heat Split / Sourced',
       } as any,
     ],
-    allocations: []
+    allocations: [
+      {
+        id: 'ALC-VAL-1',
+        sales_order_item_id: 'SOI-VAL-1',
+        sales_order_id: 'ORD-VALORIS',
+        stock_lot_id: 'LOT-001',
+        heat_number: 'H-9921',
+        allocated_qty: 12,
+        released_qty: 12,
+        dispatched_qty: 0,
+        allocation_status: 'Allocated',
+        created_at: '2026-08-26',
+        updated_at: '2026-08-26',
+      },
+      {
+        id: 'ALC-VAL-2',
+        sales_order_item_id: 'SOI-VAL-2',
+        sales_order_id: 'ORD-VALORIS',
+        stock_lot_id: 'LOT-006',
+        heat_number: 'H-67C00',
+        allocated_qty: 20,
+        released_qty: 20,
+        dispatched_qty: 0,
+        allocation_status: 'Allocated',
+        created_at: '2026-08-26',
+        updated_at: '2026-08-26',
+      }
+    ]
   },
   {
     id: 'ORD-115',
@@ -427,6 +481,17 @@ class DBService {
     this.lots = loadFromStorage('lots', initialLots)
     this.balances = loadFromStorage('balances', initialBalances)
     this.orders = loadFromStorage('orders', initialOrders)
+    // Synchronize initial orders (STS Bahrain & Valoris) so historical allocations are always populated
+    for (const initOrder of initialOrders) {
+      const idx = this.orders.findIndex(o => o.id === initOrder.id)
+      if (idx === -1) {
+        this.orders.unshift(initOrder)
+      } else if (!this.orders[idx].allocations || this.orders[idx].allocations.length === 0) {
+        this.orders[idx].allocations = initOrder.allocations
+        this.orders[idx].items = initOrder.items
+        this.orders[idx].status = initOrder.status
+      }
+    }
     this.mtcs = loadFromStorage('mtcs', initialMTCs)
     this.localPurchases = loadFromStorage('localPurchases', initialLocalPurchases)
     this.movements = loadFromStorage('movements', initialMovements)
