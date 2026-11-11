@@ -23,6 +23,8 @@ const MODULE_PERMISSIONS: Record<string, UserRole[]> = {
   traceability: ['super_admin', 'admin_inventory', 'sales_team', 'storekeeper', 'mtc_controller', 'dispatch_team', 'management_viewer'],
   orders: ['super_admin', 'admin_inventory', 'sales_team', 'storekeeper', 'dispatch_team', 'management_viewer'],
   allocation: ['super_admin', 'admin_inventory', 'sales_team'],
+  sourcing: ['super_admin', 'admin_inventory', 'sales_team', 'storekeeper', 'mtc_controller', 'management_viewer'],
+  loc: ['super_admin', 'admin_inventory', 'sales_team', 'storekeeper', 'mtc_controller', 'management_viewer'],
   approvals: ['super_admin', 'storekeeper'],
   mtc: ['super_admin', 'admin_inventory', 'mtc_controller', 'sales_team', 'management_viewer'],
   local_purchase: ['super_admin', 'admin_inventory', 'mtc_controller', 'storekeeper', 'management_viewer'],

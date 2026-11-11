@@ -9,6 +9,8 @@ import { ItemMaster } from './components/inventory/ItemMaster'
 import { HeatTraceabilityModal } from './components/inventory/HeatTraceabilityModal'
 import { SalesOrderManagement } from './components/orders/SalesOrderManagement'
 import { StockAllocationStudio } from './components/allocation/StockAllocationStudio'
+import { TechnicalSourcingPortal } from './components/sourcing/TechnicalSourcingPortal'
+import { LOCManagementPortal } from './components/loc/LOCManagementPortal'
 import { StorekeeperApprovals } from './components/approvals/StorekeeperApprovals'
 import { MTCManagement } from './components/mtc/MTCManagement'
 import { LocalPurchaseManager } from './components/localPurchase/LocalPurchaseManager'
@@ -132,6 +134,10 @@ const MainApp: React.FC = () => {
                 onComplete={() => setActiveTab('orders')}
               />
             )}
+
+            {activeTab === 'sourcing' && <TechnicalSourcingPortal />}
+
+            {activeTab === 'loc' && <LOCManagementPortal />}
 
             {activeTab === 'approvals' && <StorekeeperApprovals />}
 

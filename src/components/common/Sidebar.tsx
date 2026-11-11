@@ -18,6 +18,8 @@ import {
   ShoppingBag,
   History,
   Layers,
+  FileDown,
+  Tag,
 } from 'lucide-react'
 import { db } from '../../services/db'
 
@@ -28,6 +30,8 @@ export type NavTabId =
   | 'traceability'
   | 'orders'
   | 'allocation'
+  | 'sourcing'
+  | 'loc'
   | 'approvals'
   | 'mtc'
   | 'local_purchase'
@@ -58,6 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
     { id: 'traceability', label: 'Heat Traceability', icon: Flame },
     { id: 'orders', label: 'Sales Orders', icon: FileSpreadsheet },
     { id: 'allocation', label: 'Stock Allocation', icon: Layers },
+    { id: 'sourcing', label: 'Sourcing, Split & CIPL', icon: FileDown },
+    { id: 'loc', label: 'LOC & Material Tags', icon: Tag },
     { id: 'approvals', label: 'Storekeeper Approvals', icon: CheckSquare, badge: pendingApprovalsCount, badgeColor: 'bg-amber-500' },
     { id: 'mtc', label: 'MTC Management', icon: FileCheck2, badge: pendingMTCCount, badgeColor: 'bg-blue-600' },
     { id: 'local_purchase', label: 'Local Purchases / L-Codes', icon: ShoppingBag },

@@ -1,0 +1,2412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSG Oilfield — Technical Sourcing & PO Management System</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        :root {
+            --msg-dark: #0f172a;
+            --msg-slate: #1e293b;
+            --msg-orange: #f97316;
+            --msg-orange-hover: #ea580c;
+            --msg-gold: #f59e0b;
+            --msg-red: #dc2626;
+            --msg-gray-light: #f8fafc;
+            --msg-border: #e2e8f0;
+        }
+
+        body {
+            background-color: #f1f5f9;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #1e293b;
+        }
+
+        /* Top Brand Utility Bar */
+        .brand-topbar {
+            background-color: #0b1324;
+            color: #94a3b8;
+            font-size: 0.825rem;
+            padding: 6px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        .brand-topbar span {
+            color: var(--msg-orange);
+            font-weight: 600;
+        }
+
+        /* App Main Header */
+        .app-header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            padding: 1.75rem 0;
+            margin-bottom: 2rem;
+            border-bottom: 4px solid var(--msg-orange);
+            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.4);
+        }
+
+        .header-logo-badge {
+            background: #ffffff;
+            padding: 8px 18px;
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            display: inline-block;
+            transition: transform 0.2s ease;
+        }
+        .header-logo-badge:hover {
+            transform: scale(1.02);
+        }
+        .header-logo-badge img {
+            max-height: 52px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .brand-tagline {
+            color: var(--msg-gold);
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .upload-card {
+            border: 2px dashed #cbd5e1;
+            border-radius: 14px;
+            background-color: #ffffff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .upload-card:hover, .upload-card.dragover {
+            background-color: #fff7ed;
+            border-color: var(--msg-orange);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(249, 115, 22, 0.15);
+        }
+        .upload-icon {
+            font-size: 3.2rem;
+            color: var(--msg-orange);
+        }
+
+        .card-custom {
+            border-radius: 14px;
+            border: 1px solid var(--msg-border);
+            box-shadow: 0 4px 18px rgba(0,0,0,0.04);
+            margin-bottom: 2rem;
+            background: #ffffff;
+        }
+
+        #itemsTable {
+            min-width: 1800px;
+        }
+
+        .item-client-po-item-no {
+            min-width: 80px;
+        }
+        .item-qty {
+            min-width: 90px;
+        }
+        .item-uom {
+            min-width: 65px;
+        }
+        .item-rate, .item-amount {
+            min-width: 95px;
+        }
+        .item-heat {
+            min-width: 125px;
+        }
+        .item-cert {
+            min-width: 140px;
+        }
+        .item-make {
+            min-width: 145px;
+        }
+        .item-remarks {
+            min-width: 180px;
+        }
+        .item-supplier-name {
+            min-width: 160px;
+        }
+        .item-supplier-po {
+            min-width: 125px;
+        }
+
+        .table-custom th {
+            background-color: var(--msg-dark);
+            color: white;
+            font-size: 0.85rem;
+            text-align: center;
+            vertical-align: middle;
+            border-bottom: 3px solid var(--msg-orange);
+        }
+        .table-custom th.internal-col {
+            background-color: var(--msg-slate);
+            border-bottom: 3px solid var(--msg-gold);
+        }
+        .table-custom td {
+            vertical-align: middle;
+        }
+
+        textarea.desc {
+            width: 100%;
+            min-width: 360px;
+            min-height: 65px;
+            font-size: 0.88rem;
+            border-radius: 6px;
+            resize: both;
+            border: 1px solid #cbd5e1;
+            padding: 6px 8px;
+        }
+        textarea.desc:focus {
+            border-color: var(--msg-orange);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+        }
+
+        /* Action Buttons */
+        .btn-msg-primary {
+            background: linear-gradient(135deg, var(--msg-orange) 0%, var(--msg-orange-hover) 100%);
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
+            transition: all 0.3s ease;
+        }
+        .btn-msg-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45);
+            color: white;
+        }
+
+        .btn-preview {
+            background: linear-gradient(135deg, #475569 0%, #334155 100%);
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(51, 65, 85, 0.3);
+            transition: all 0.3s ease;
+        }
+        .btn-preview:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(51, 65, 85, 0.4);
+            color: white;
+        }
+
+        .btn-client-download {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+            transition: all 0.3s ease;
+        }
+        .btn-client-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+            color: white;
+        }
+
+        .btn-stores-download {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
+            transition: all 0.3s ease;
+        }
+        .btn-stores-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.45);
+            color: white;
+        }
+
+        .btn-cipl-download {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+            transition: all 0.3s ease;
+        }
+        .btn-cipl-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(2, 132, 199, 0.45);
+            color: white;
+        }
+
+        .btn-pdf-download {
+            background: linear-gradient(135deg, #ea580c 0%, #dc2626 100%);
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35);
+            transition: all 0.3s ease;
+        }
+        .btn-pdf-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(234, 88, 12, 0.45);
+            color: white;
+        }
+
+        .logo-preview {
+            max-height: 48px;
+            background: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .badge-internal {
+            font-size: 0.65rem;
+            background-color: var(--msg-orange);
+            color: white;
+            padding: 2px 5px;
+            border-radius: 4px;
+            margin-top: 3px;
+            display: inline-block;
+        }
+
+        /* History Cards */
+        .history-card {
+            border-left: 5px solid var(--msg-orange);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .history-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+
+        /* Sticky Selection Action Bar */
+        .selection-bar {
+            position: sticky;
+            top: 12px;
+            z-index: 1025;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border: 2px solid #f59e0b;
+            border-radius: 12px;
+            padding: 12px 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+            margin-bottom: 1.25rem;
+            animation: slideDown 0.2s ease-out;
+        }
+        @keyframes slideDown {
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Excel Sheet Preview Styling */
+        .excel-frame {
+            border: 2px solid #217346;
+            background-color: #ffffff;
+            padding: 15px;
+            font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+            color: #000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+        .excel-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .excel-table th, .excel-table td {
+            border: 1px solid #000000;
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+        .excel-title-cell {
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            height: 40px;
+            vertical-align: middle;
+            background-color: #f8fafc;
+        }
+        .excel-meta-cell {
+            font-weight: bold;
+            font-size: 13px;
+            height: 26px;
+            vertical-align: middle;
+        }
+        .excel-header-cell {
+            background-color: #F2F2F2;
+            font-weight: bold;
+            text-align: center;
+            font-size: 13px;
+        }
+        .footer-branding {
+            border-top: 1px solid #cbd5e1;
+            padding-top: 1.5rem;
+            margin-top: 3rem;
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HTML5 Datalist for Master Supplier Autocomplete -->
+    <datalist id="suppliersList"></datalist>
+
+    <!-- Top Utility Bar -->
+    <div class="brand-topbar text-center d-none d-md-block">
+        <div class="container d-flex justify-content-between align-items-center">
+            <div><i class="bi bi-shield-check text-warning me-1"></i> MSG OILFIELD TECHNICAL PORTAL</div>
+            <div><span>Material Solutions Grid</span> &bull; Sourcing - Reliable & Systematic</div>
+            <div class="d-flex align-items-center gap-3">
+                <div><i class="bi bi-person-circle text-warning me-1"></i> <span id="currentUsernameBadge" class="text-white fw-semibold">{{ username|default('admin') }}</span></div>
+                <a href="/logout" class="btn btn-sm btn-outline-danger py-0 text-white border-0" title="Sign Out"><i class="bi bi-box-arrow-right me-1"></i>Logout</a>
+                <div><i class="bi bi-globe me-1"></i> www.msgoilfield.com</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Header -->
+    <div class="app-header">
+        <div class="container text-center">
+            <div class="d-flex align-items-center justify-content-center flex-wrap gap-3 mb-2">
+                <div class="header-logo-badge">
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="MSG Oilfield Logo">
+                </div>
+                <div class="text-start">
+                    <h2 class="fw-bold mb-0 text-white" style="letter-spacing: -0.5px;">Sales Order Parser & Summary Sheet Generator</h2>
+                    <p class="brand-tagline mb-0"><i class="bi bi-gear-fill me-1"></i> Technical Sourcing & PO Management System</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid px-4 pb-5">
+        
+        <!-- Step 1: Upload PDF -->
+        <div class="card card-custom p-4 text-center upload-card mb-4" id="dropzone">
+            <input type="file" id="pdfFileInput" accept=".pdf" class="d-none">
+            <div class="py-4">
+                <i class="bi bi-cloud-arrow-up upload-icon mb-3 d-block"></i>
+                <h4 class="fw-semibold text-dark">Drag & Drop Sales Order PDF Here</h4>
+                <p class="text-muted">or click to browse PDF files from your computer</p>
+                <div class="spinner-border text-warning d-none" id="uploadSpinner" role="status">
+                    <span class="visually-hidden">Parsing PDF...</span>
+                </div>
+                <div id="statusMessage" class="fw-semibold mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Step 2: Live Preview & Editor (Hidden initially) -->
+        <div id="editorSection" class="d-none">
+            
+            <div class="card card-custom p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-info-circle text-warning me-2"></i>Header Details</h5>
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="MSG Logo" class="logo-preview">
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Client Name</label>
+                        <input type="text" id="clientInput" class="form-control" placeholder="Client Name">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">PO Number</label>
+                        <input type="text" id="poInput" class="form-control" placeholder="PO Number">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">MSG Ref</label>
+                        <input type="text" id="msgRefInput" class="form-control" placeholder="MSG Ref">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold"><i class="bi bi-currency-exchange text-warning me-1"></i>SO Currency</label>
+                        <select id="currencyInput" class="form-select">
+                            <option value="USD">USD ($ - US Dollar)</option>
+                            <option value="AED">AED (Dhs - UAE Dirham)</option>
+                            <option value="SAR">SAR (SR - Saudi Riyal)</option>
+                            <option value="EUR">EUR (€ - Euro)</option>
+                            <option value="GBP">GBP (£ - British Pound)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card card-custom p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div>
+                        <h5 class="fw-bold text-dark mb-0 d-inline-block me-3"><i class="bi bi-table text-warning me-2"></i>Summary Line Items (Live Preview)</h5>
+                        <small class="text-muted"><i class="bi bi-info-circle"></i> Use checkboxes on the left to Convert selected items to <strong>Supplier PO</strong> or <strong>CIPL</strong>.</small>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap align-items-center">
+                        <span id="autosaveStatusBadge" class="badge bg-light text-muted border px-2 py-1" style="font-size: 0.8rem;"><i class="bi bi-cloud-check text-secondary me-1"></i>Autosave Ready</span>
+                        <button class="btn btn-sm btn-msg-primary" onclick="saveWorksheetProgress(false)"><i class="bi bi-cloud-check-fill me-1"></i>Save Draft</button>
+                        <button class="btn btn-sm btn-outline-warning text-dark" onclick="saveWorksheetProgress(true)" title="Save as a separate draft (e.g. 2nd editor)"><i class="bi bi-copy me-1"></i>Save as New Draft</button>
+                        <button class="btn btn-sm btn-preview" onclick="openExcelPreviewModal()"><i class="bi bi-eye-fill me-1"></i>Preview Excel</button>
+                        <button class="btn btn-sm btn-outline-dark" onclick="addRow()"><i class="bi bi-plus-lg me-1"></i>Add Row</button>
+                    </div>
+                </div>
+
+                <!-- Sticky Floating Selection Toolbar (Visible when rows are selected) -->
+                <div id="selectionQuickBar" class="selection-bar d-none">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-warning text-dark fs-6" id="selectedCountBadge">0 Selected</span>
+                            <span class="text-white small fw-semibold">Bulk Operations:</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <button class="btn btn-sm btn-primary fw-semibold" onclick="openSupplierPOModal()"><i class="bi bi-cart-plus-fill me-1"></i>Convert to Supplier PO</button>
+                            <button class="btn btn-sm btn-info text-dark fw-semibold" onclick="openCIPLConfigModal()"><i class="bi bi-box-seam-fill me-1"></i>Convert to CIPL</button>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-stack me-1"></i>Set Packaging
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="javascript:void(0)" onclick="bulkSetPackaging('Pallet')"><i class="bi bi-stack me-1"></i>Pallet</a></li>
+                                    <li><a class="dropdown-item" href="javascript:void(0)" onclick="bulkSetPackaging('Box')"><i class="bi bi-box me-1"></i>Box</a></li>
+                                    <li><a class="dropdown-item" href="javascript:void(0)" onclick="bulkSetPackaging('Crate')"><i class="bi bi-archive me-1"></i>Crate</a></li>
+                                    <li><a class="dropdown-item" href="javascript:void(0)" onclick="bulkSetPackaging('Wooden Box')"><i class="bi bi-box2 me-1"></i>Wooden Box</a></li>
+                                </ul>
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSelectedRows()"><i class="bi bi-trash me-1"></i>Delete Selected</button>
+                            <button class="btn btn-sm btn-outline-secondary text-white" onclick="deselectAll()"><i class="bi bi-x-circle me-1"></i>Deselect</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Filter Toolbar -->
+                <div class="row g-2 align-items-center mb-3">
+                    <div class="col-lg-6">
+                        <div class="alert alert-light border d-flex align-items-center mb-0 py-2">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="filterMachinedCheck" checked>
+                                <label class="form-check-label fw-semibold text-dark" for="filterMachinedCheck">
+                                    Export ONLY items containing <code>Machined From</code>, <code>Fabricated From</code>, <code>Made from</code>, <code>Modified from</code>, <code>Offered</code>, or <code>Locally</code> in remarks
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6 text-lg-end">
+                        <div class="d-inline-flex gap-2 flex-wrap align-items-center bg-light p-2 rounded border">
+                            <span class="fw-bold text-dark small"><i class="bi bi-box-seam text-warning me-1"></i>Quick Actions:</span>
+                            <button type="button" class="btn btn-xs btn-outline-primary" onclick="openSupplierPOModal()"><i class="bi bi-cart-plus me-1"></i>Supplier PO</button>
+                            <button type="button" class="btn btn-xs btn-outline-info text-dark" onclick="openCIPLConfigModal()"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CIPL Builder</button>
+                            <button type="button" class="btn btn-xs btn-outline-dark" onclick="setAllPackaging('Pallet')"><i class="bi bi-stack me-1"></i>All Pallet</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive mb-4">
+                    <table class="table table-bordered table-custom align-middle" id="itemsTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;" class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="selectAllCheckbox" onchange="toggleSelectAll(this)" title="Select All Items">
+                                </th>
+                                <th style="width: 55px;">SL NO</th>
+                                <th class="internal-col" style="width: 115px;">
+                                    CLIENT PO ITEM NO
+                                </th>
+                                <th style="min-width: 360px;">Description</th>
+                                <th style="width: 95px;">PO Qty</th>
+                                <th style="width: 75px;">UOM</th>
+                                <th style="width: 100px;">Unit Rate</th>
+                                <th style="width: 110px;">Total Amount</th>
+                                <th style="width: 165px; background-color: #0369a1; border-bottom: 3px solid #38bdf8;">
+                                    PACKAGING (CIPL)<br><span class="badge bg-light text-dark" style="font-size:0.68rem;">Pallet / Box / #</span>
+                                </th>
+                                <th style="width: 135px;">Heat Number</th>
+                                <th style="width: 150px;">Certificate Number</th>
+                                <th style="width: 150px;">MAKE</th>
+                                <th style="width: 180px;">Remarks</th>
+                                <th class="internal-col" style="width: 165px;">
+                                    SUPPLIER NAME<br><span class="badge-internal">Stores Only</span>
+                                </th>
+                                <th class="internal-col" style="width: 130px;">
+                                    SUPPLIER PO #<br><span class="badge-internal">Stores Only</span>
+                                </th>
+                                <th style="width: 75px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsTableBody">
+                            <!-- Rows added dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-center flex-wrap gap-3 pt-2">
+                    <button class="btn btn-msg-primary" onclick="saveWorksheetProgress(false)">
+                        <i class="bi bi-cloud-upload-fill me-2"></i>Save Worksheet Draft
+                        <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Saves Current Draft under Sales Order</div>
+                    </button>
+
+                    <button class="btn btn-preview" onclick="openExcelPreviewModal()">
+                        <i class="bi bi-eye-fill me-2"></i>Preview Excel Layout
+                        <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Visual Modal Preview Before Download</div>
+                    </button>
+
+                    <button class="btn btn-client-download" onclick="downloadExcel(false)">
+                        <i class="bi bi-file-earmark-excel me-2"></i>Download Client Summary (.xlsx)
+                        <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Clean Layout with Client Item Numbers</div>
+                    </button>
+                    
+                    <button class="btn btn-stores-download" onclick="downloadExcel(true)">
+                        <i class="bi bi-shield-lock me-2"></i>Download Stores Sheet (.xlsx)
+                        <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">11 Columns (Includes Supplier Details)</div>
+                    </button>
+
+                    <button class="btn btn-cipl-download" onclick="openCIPLConfigModal()">
+                        <i class="bi bi-file-earmark-spreadsheet-fill me-2"></i>Download CIPL (.xlsx)
+                        <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Commercial Invoice & Packing List (Pallet/Box/COO/HS)</div>
+                    </button>
+
+                    <button class="btn btn-pdf-download" onclick="exportSupplierPDFs()">
+                        <i class="bi bi-file-earmark-pdf me-2"></i>Export Supplier PDFs (.zip)
+                        <div style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Generates Separate PO PDF per Supplier</div>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Worked Sheets History Section (Sales Order Dashboard) -->
+        <div class="card card-custom p-4 mb-4" id="historySection">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-grid-3x3-gap-fill text-warning me-2"></i>Sales Orders & Drafts Portal</h5>
+                    <small class="text-muted">Multi-user draft management. Grouped by Sales Order &bull; Restore drafts or download documents directly.</small>
+                </div>
+                <div>
+                    <span id="historyTotalBadge" class="badge bg-dark fs-6">0 Orders Saved</span>
+                </div>
+            </div>
+
+            <!-- Live Search Bar -->
+            <div class="input-group mb-3">
+                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                <input type="text" id="historySearchInput" class="form-control border-start-0" placeholder="Search orders by SO Ref, Client, PO Number, Editor Name, or Item Description..." onkeyup="filterHistory(this.value)">
+                <button class="btn btn-outline-secondary" type="button" onclick="clearHistorySearch()"><i class="bi bi-x-circle me-1"></i>Clear</button>
+            </div>
+
+            <div id="historyListContainer" class="row g-3">
+                <!-- Loaded dynamically -->
+            </div>
+        </div>
+
+        <div class="footer-branding text-center">
+            <p class="mb-1 fw-semibold text-dark">MSG OILFIELD — Material Solutions Grid</p>
+            <p class="mb-0 text-muted">Sourcing - Reliable & Systematic &bull; Technical & Quality Engineering</p>
+        </div>
+
+    </div>
+
+    <!-- Supplier PO Conversion Modal -->
+    <div class="modal fade" id="supplierPOModal" tabindex="-1" aria-labelledby="supplierPOModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-cart-check-fill text-warning fs-5"></i>
+                        <div>
+                            <h5 class="modal-title fw-bold mb-0" id="supplierPOModalLabel">Supplier Purchase Orders & Heat Entry Portal</h5>
+                            <small class="text-white-50">Assign suppliers, PO numbers, enter heat & cert numbers, and manage manufacturer makes across order items.</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    <!-- Quick Bulk Fill Header -->
+                    <div class="card card-body bg-white border mb-3 shadow-sm py-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <span class="fw-bold text-dark small"><i class="bi bi-lightning-charge-fill text-warning me-1"></i>Bulk Fill Visible Rows:</span>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="filterSupplierModal('all')" id="suppFilterAllBtn">All Items (<span id="suppModalTotalCount">0</span>)</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm active" onclick="filterSupplierModal('selected')" id="suppFilterSelBtn">Selected Items Only (<span id="poSelectedCount">0</span>)</button>
+                            </div>
+                        </div>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label fw-semibold small mb-1">Bulk Supplier Name</label>
+                                <input type="text" id="modalSupplierName" class="form-control form-control-sm" list="suppliersList" placeholder="Select or type Supplier name...">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold small mb-1">Bulk Supplier PO #</label>
+                                <input type="text" id="modalSupplierPO" class="form-control form-control-sm" placeholder="e.g. PO-1026-3789">
+                            </div>
+                            <div class="col-md-3">
+                                <button type="button" class="btn btn-sm btn-dark w-100 fw-semibold" onclick="bulkFillModalSupplier()"><i class="bi bi-arrow-down-circle-fill me-1"></i>Fill To All Rows Below</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items Table in Supplier Modal -->
+                    <div class="table-responsive bg-white rounded border shadow-sm" style="max-height: 440px;">
+                        <table class="table table-sm table-bordered table-hover align-middle mb-0" id="poItemsPreviewTable">
+                            <thead class="table-dark sticky-top">
+                                <tr>
+                                    <th style="width: 45px;" class="text-center">#</th>
+                                    <th style="width: 80px;" class="text-center">Client #</th>
+                                    <th style="min-width: 250px;">Description</th>
+                                    <th style="width: 90px;" class="text-center">Qty & UOM</th>
+                                    <th style="width: 175px;">Supplier Name</th>
+                                    <th style="width: 135px;" class="text-center">Supplier PO #</th>
+                                    <th style="width: 135px;" class="text-center">Heat Number</th>
+                                    <th style="width: 150px;" class="text-center">Certificate #</th>
+                                    <th style="width: 145px;" class="text-center">MAKE</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white d-flex justify-content-between">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary fw-bold" onclick="applySupplierPO()"><i class="bi bi-check-circle-fill me-1"></i>Apply Details to Worksheet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CIPL Configuration & Conversion Modal -->
+    <div class="modal fade" id="ciplConfigModal" tabindex="-1" aria-labelledby="ciplConfigModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold" id="ciplConfigModalLabel"><i class="bi bi-file-earmark-spreadsheet-fill text-info me-2"></i>Commercial Invoice & Packing List (CIPL) Builder</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                        <p class="text-muted small mb-0"><i class="bi bi-info-circle me-1"></i> Edit Pallet/Box packaging, <strong>Unit Weight (KG)</strong>, <strong>Dimensions (CM)</strong>, prices, <strong>HS Codes</strong>, and <strong>Country of Origin</strong>.</p>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <div class="d-flex align-items-center gap-1">
+                                <label class="form-label fw-semibold small mb-0 text-nowrap"><i class="bi bi-currency-exchange me-1"></i>Currency:</label>
+                                <select id="modalCiplCurrency" class="form-select form-select-sm" style="max-width: 120px;" onchange="updateModalCurrency(this.value)">
+                                    <option value="USD">USD ($)</option>
+                                    <option value="AED">AED</option>
+                                    <option value="SAR">SAR</option>
+                                    <option value="EUR">EUR (€)</option>
+                                    <option value="GBP">GBP (£)</option>
+                                </select>
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-xs btn-outline-primary" onclick="setAllModalPackaging('Pallet')"><i class="bi bi-stack me-1"></i>All Pallet</button>
+                                <button type="button" class="btn btn-xs btn-outline-info text-dark" onclick="setAllModalPackaging('Box')"><i class="bi bi-box me-1"></i>All Box</button>
+                                <button type="button" class="btn btn-xs btn-outline-dark" onclick="setAllModalPackaging('Crate')"><i class="bi bi-archive me-1"></i>All Crate</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive" style="max-height: 420px;">
+                        <table class="table table-sm table-bordered bg-white align-middle" id="ciplItemsModalTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th style="width: 40px;" class="text-center">#</th>
+                                    <th>Description</th>
+                                    <th style="width: 75px;" class="text-center">Qty</th>
+                                    <th style="width: 135px;" class="text-center">Packaging</th>
+                                    <th style="width: 85px;" class="text-end">Unit Rate</th>
+                                    <th style="width: 90px;" class="text-end">Amount</th>
+                                    <th style="width: 85px;" class="text-center">Unit Wt (KG)</th>
+                                    <th style="width: 85px;" class="text-center">Total Wt (KG)</th>
+                                    <th style="width: 125px;" class="text-center">Dimensions (CM)</th>
+                                    <th style="width: 110px;" class="text-center">HS Code</th>
+                                    <th style="width: 115px;" class="text-center">Origin</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="fw-bold text-dark">Total Value: <span id="ciplModalTotalAmt" class="text-success fs-6 fw-bold">USD 0.00</span></span>
+                        <span class="text-muted">|</span>
+                        <span class="fw-bold text-dark">Total Net Weight: <span id="ciplModalTotalNetWt" class="text-primary fs-6 fw-bold">0.00 KGS</span></span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary fw-bold" onclick="applyCIPLAndDownload()"><i class="bi bi-download me-1"></i>Apply & Download CIPL (.xlsx)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="cloudinaryModal" tabindex="-1" aria-labelledby="cloudinaryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold" id="cloudinaryModalLabel"><i class="bi bi-cloud-arrow-up text-warning me-2"></i>Cloudinary Cloud Storage Settings</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    <p class="text-muted small mb-3">Configure your Cloudinary credentials to automatically store generated Excel files, Supplier PDFs, and Worksheet backups in Cloudinary cloud storage.</p>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Cloud Name</label>
+                        <input type="text" id="cloudNameInput" class="form-control" placeholder="e.g. msg-oilfield">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">API Key</label>
+                        <input type="text" id="apiKeyInput" class="form-control" placeholder="e.g. 123456789012345">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">API Secret</label>
+                        <input type="password" id="apiSecretInput" class="form-control" placeholder="••••••••••••••••••••">
+                    </div>
+
+                    <div id="cloudinaryAlert" class="alert d-none py-2 mb-0"></div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-warning fw-bold text-dark" onclick="saveCloudinaryCredentials()"><i class="bi bi-save me-1"></i>Save Credentials & Connect</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Excel Visual Preview Modal -->
+    <div class="modal fade" id="excelPreviewModal" tabindex="-1" aria-labelledby="excelPreviewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold" id="excelPreviewModalLabel"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel Sheet Visual Layout Preview</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <ul class="nav nav-pills" id="previewTab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active fw-bold" id="client-tab" data-bs-toggle="tab" data-bs-target="#client-preview" type="button" role="tab" onclick="renderPreview(false)">Client Summary Sheet (8 Cols)</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link fw-bold" id="stores-tab" data-bs-toggle="tab" data-bs-target="#stores-preview" type="button" role="tab" onclick="renderPreview(true)">Internal Stores Sheet (11 Cols)</button>
+                            </li>
+                        </ul>
+                        <span id="previewCountBadge" class="badge bg-warning text-dark fs-6">Showing items</span>
+                    </div>
+
+                    <!-- Visual Excel Render Frame -->
+                    <div class="excel-frame">
+                        <div id="excelVisualContent"></div>
+                    </div>
+
+                </div>
+                <div class="modal-footer bg-white">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close Preview</button>
+                    <button type="button" class="btn btn-success fw-bold" onclick="downloadFromModal()"><i class="bi bi-download me-1"></i>Download Excel File (.xlsx)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const pdfFileInput = document.getElementById('pdfFileInput');
+        const uploadSpinner = document.getElementById('uploadSpinner');
+        const statusMessage = document.getElementById('statusMessage');
+        const editorSection = document.getElementById('editorSection');
+        const itemsTableBody = document.getElementById('itemsTableBody');
+
+        let currentPreviewIsInternal = false;
+        let currentSheetSnapshotId = null;
+
+        // Load Initial Data
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchSuppliers();
+            fetchHistory();
+            checkCloudinaryStatus();
+
+            // Setup autosave triggers on header inputs and table changes
+            ['clientInput', 'poInput', 'msgRefInput', 'currencyInput', 'filterMachinedCheck'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('input', () => triggerAutoSave());
+                    el.addEventListener('change', () => triggerAutoSave());
+                }
+            });
+            const tableBody = document.getElementById('itemsTableBody');
+            if (tableBody) {
+                tableBody.addEventListener('input', () => triggerAutoSave());
+                tableBody.addEventListener('change', () => triggerAutoSave());
+            }
+        });
+
+        function fetchSuppliers() {
+            fetch('/api/suppliers')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.suppliers) {
+                        const datalist = document.getElementById('suppliersList');
+                        datalist.innerHTML = '';
+                        data.suppliers.forEach(supp => {
+                            const opt = document.createElement('option');
+                            opt.value = supp;
+                            datalist.appendChild(opt);
+                        });
+                    }
+                })
+                .catch(err => console.error("Could not load suppliers datalist", err));
+        }
+
+        function checkCloudinaryStatus() {
+            fetch('/api/cloudinary-config')
+                .then(res => res.json())
+                .then(data => {
+                    const badge = document.getElementById('cloudinaryStatusBadge');
+                    if (data.configured) {
+                        badge.innerHTML = `<i class="bi bi-cloud-check-fill text-success me-1"></i> Cloudinary Active (${data.cloud_name})`;
+                    } else {
+                        badge.innerHTML = `<i class="bi bi-cloud-slash-fill text-warning me-1"></i> Cloudinary Unconfigured`;
+                    }
+                })
+                .catch(err => console.error("Could not check Cloudinary status", err));
+        }
+
+        function openCloudinaryModal() {
+            fetch('/api/cloudinary-config')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.cloud_name) document.getElementById('cloudNameInput').value = data.cloud_name;
+                    const modal = new bootstrap.Modal(document.getElementById('cloudinaryModal'));
+                    modal.show();
+                });
+        }
+
+        function saveCloudinaryCredentials() {
+            const cloud_name = document.getElementById('cloudNameInput').value.trim();
+            const api_key = document.getElementById('apiKeyInput').value.trim();
+            const api_secret = document.getElementById('apiSecretInput').value.trim();
+
+            const alertBox = document.getElementById('cloudinaryAlert');
+
+            fetch('/api/cloudinary-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cloud_name, api_key, api_secret })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+                if (data.configured) {
+                    alertBox.classList.add('alert-success');
+                    alertBox.innerText = 'Connected to Cloudinary successfully!';
+                    checkCloudinaryStatus();
+                } else {
+                    alertBox.classList.add('alert-danger');
+                    alertBox.innerText = 'Could not connect. Please verify Cloud Name, API Key, and API Secret.';
+                }
+            })
+            .catch(err => {
+                alertBox.classList.remove('d-none');
+                alertBox.classList.add('alert-danger');
+                alertBox.innerText = 'Error saving credentials: ' + err.message;
+            });
+        }
+
+        dropzone.addEventListener('click', () => pdfFileInput.click());
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFileUpload(e.dataTransfer.files[0]);
+            }
+        });
+
+        pdfFileInput.addEventListener('change', () => {
+            if (pdfFileInput.files.length > 0) {
+                handleFileUpload(pdfFileInput.files[0]);
+            }
+        });
+
+        function handleFileUpload(file) {
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                alert('Please upload a PDF file.');
+                return;
+            }
+
+            uploadSpinner.classList.remove('d-none');
+            statusMessage.innerText = 'Parsing Sales Order PDF...';
+            statusMessage.className = 'fw-semibold mt-2 text-warning';
+
+            const formData = new FormData();
+            formData.append('pdf_file', file);
+
+            fetch('/api/parse', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                uploadSpinner.classList.add('d-none');
+                if (data.success) {
+                    statusMessage.innerText = 'PDF Parsed Successfully!';
+                    statusMessage.className = 'fw-semibold mt-2 text-success';
+                    currentSheetSnapshotId = data.snapshot_id || null;
+                    populateEditor(data.data);
+                    editorSection.classList.remove('d-none');
+                    editorSection.scrollIntoView({ behavior: 'smooth' });
+                    fetchHistory();
+                } else {
+                    statusMessage.innerText = 'Error: ' + data.error;
+                    statusMessage.className = 'fw-semibold mt-2 text-danger';
+                }
+            })
+            .catch(err => {
+                uploadSpinner.classList.add('d-none');
+                statusMessage.innerText = 'Upload failed: ' + err.message;
+                statusMessage.className = 'fw-semibold mt-2 text-danger';
+            });
+        }
+
+        function autoDetectMakeJs(text = '') {
+            const t = String(text).toUpperCase();
+            if (/\b(JD[-_]?STOCK|DELCORTE|MEGA\/JD)\b/.test(t)) return 'DELCORTE FRANCE';
+            if (/\b(BENKAN\/TK|BENKAN)\b/.test(t)) return 'BENKAN THAILAND';
+            if (/\b(BOTHWELL)\b/.test(t)) return 'BOTHWELL TAIWAN';
+            if (/\b(CHERO|CHERO\s+PIPING|CHERO\s+FORGED|CHERO\s*F)\b/.test(t)) return 'CHERO ITALY';
+            if (/\b(BONNEY\s+FORGE)\b/.test(t)) return 'BONNEY FORGE USA';
+            if (/\b(PROMAT)\b/.test(t)) return 'PROMAT UK';
+            if (/\b(OMSA[-_]?STOCK|OMSA)\b/.test(t)) return 'OMSA GERMANY';
+            if (/\b(W[-_]?STOCK|WMA?ASS)\b/.test(t)) return 'WMASS GERMANY';
+            if (/\b(TK[-_]?STOCK|TK)\b/.test(t)) return 'TK KOREA';
+            if (/\b(ST&H(?:[-_]?STOCK)?|STH)\b/.test(t)) return 'ST&H KOREA';
+            if (/\b(MFF|METALFAR)\b/.test(t)) return 'Metalfar Italy';
+            if (/\b(ULMA)\b/.test(t)) return 'ULMA SPAIN';
+            if (/\b(MELESI)\b/.test(t)) return 'MELESI ITALY';
+            if (/\b(MEGA)\b/.test(t)) return 'MEGA ITALY';
+            if (/\b(RACCORTUBI)\b/.test(t)) return 'RACCORTUBI ITALY';
+            if (/\b(KITZ)\b/.test(t)) return 'KITZ JAPAN';
+            if (/\b(VALVEWORKS)\b/.test(t)) return 'VALVEWORKS USA';
+            if (/\b(SEGYUNG)\b/.test(t)) return 'SEGYUNG KOREA';
+            return '';
+        }
+
+        function autoDetectCooJs(makeText = '', descText = '', remarksText = '') {
+            const text = (String(makeText) + ' ' + String(descText) + ' ' + String(remarksText)).toUpperCase();
+            if (/\b(FRANCE|DELCORTE)\b/.test(text)) return 'France';
+            if (/\b(GERMANY|OMSA|WMASS|WMAASS)\b/.test(text)) return 'Germany';
+            if (/\b(ITALY|ITALIAN|METALFAR|MFF|MELESI|MEGA|RACCORTUBI|AR\s*ITALY|CHERO)\b/.test(text) || text.includes('ITAL')) return 'Italy';
+            if (/\b(KOREA|TK|ST&H|STH|SEGYUNG)\b/.test(text)) return 'South Korea';
+            if (/\b(THAILAND|BENKAN)\b/.test(text)) return 'Thailand';
+            if (/\b(SPAIN|ULMA)\b/.test(text)) return 'Spain';
+            if (/\b(TAIWAN|BOTHWELL)\b/.test(text)) return 'Taiwan';
+            if (/\b(USA|UNITED STATES|VALVEWORKS|BONNEY)\b/.test(text)) return 'USA';
+            if (/\b(UK|UNITED KINGDOM|ENGLAND|PROMAT)\b/.test(text)) return 'United Kingdom';
+            if (/\b(JAPAN|KITZ)\b/.test(text)) return 'Japan';
+            if (/\b(INDIA)\b/.test(text)) return 'India';
+            if (/\b(CHINA)\b/.test(text)) return 'China';
+            if (/\b(UAE|UNITED ARAB EMIRATES|DUBAI)\b/.test(text)) return 'UAE';
+            if (text.includes('METALFAR') || text.includes('ITAL')) return 'Italy';
+            if (text.includes('DELCORTE')) return 'France';
+            return 'Italy';
+        }
+
+        function autoDetectHsJs(descText = '') {
+            const text = String(descText).toUpperCase();
+            if (/\b(FLANGE|WNRF|BLIND|SPECTACLE|SLIP-ON|SO\s*FLANGE|SW\s*FLANGE|RTJ\s*FLANGE|ORIFICE)\b/.test(text)) {
+                if (/\b(316|316L|304|304L|SS|STAINLESS|INCONEL|DUPLEX|SUPER DUPLEX)\b/.test(text)) return '7307.21.00';
+                return '7307.91.00';
+            }
+            if (/\b(ELBOW|TEE|REDUCER|CAP|CROSS|ECC\.?\s*RED|CONC\.?\s*RED|BEND)\b/.test(text)) {
+                if (/\b(316|316L|304|304L|SS|STAINLESS)\b/.test(text)) return '7307.23.00';
+                return '7307.93.00';
+            }
+            if (/\b(SWAGE|NIPPLE|COUPLING|UNION|WELDOLET|SOCKOLET|THREADOLET|NIPPOLET|LATROLET|BUSHING|PLUG|OLET)\b/.test(text)) {
+                if (/\b(316|316L|304|304L|SS|STAINLESS)\b/.test(text)) return '7307.29.00';
+                return '7307.92.00';
+            }
+            if (/\b(PIPE|TUBE|SMLS|TUBING)\b/.test(text)) {
+                if (/\b(316|316L|304|304L|SS|STAINLESS)\b/.test(text)) return '7304.41.00';
+                return '7304.19.00';
+            }
+            if (/\b(VALVE|BALL VALVE|CHECK VALVE|GATE VALVE|GLOBE VALVE|NEEDLE VALVE|BUTTERFLY)\b/.test(text)) return '8481.80.00';
+            if (/\b(GASKET|SPIRAL WOUND|INSULATION KIT|RING JOINT)\b/.test(text)) return '6812.99.00';
+            if (/\b(STUD|BOLT|NUT|FASTENER|WASHER)\b/.test(text)) return '7318.15.00';
+            return '7307.93.00';
+        }
+
+        function onItemDetailsChange(input) {
+            const tr = input.closest('tr');
+            if (!tr) return;
+            const desc = tr.querySelector('.item-desc')?.value || '';
+            const makeInput = tr.querySelector('.item-make');
+            let make = makeInput?.value || '';
+            const remarks = tr.querySelector('.item-remarks')?.value || '';
+
+            // Auto-detect MAKE if empty
+            if (!make) {
+                const detectedMake = autoDetectMakeJs(desc + ' ' + remarks);
+                if (detectedMake && makeInput) {
+                    makeInput.value = detectedMake;
+                    make = detectedMake;
+                }
+            }
+
+            if (!tr.getAttribute('data-coo-custom')) {
+                const coo = autoDetectCooJs(make, desc, remarks);
+                if (coo) tr.setAttribute('data-coo', coo);
+            }
+            if (!tr.getAttribute('data-hs-code-custom')) {
+                const hs = autoDetectHsJs(desc);
+                if (hs) tr.setAttribute('data-hs-code', hs);
+            }
+        }
+
+        function populateEditor(data) {
+            document.getElementById('clientInput').value = data.client || '';
+            document.getElementById('poInput').value = data.po_number || '';
+            document.getElementById('msgRefInput').value = data.msg_ref || '';
+            if (data.currency && document.getElementById('currencyInput')) {
+                document.getElementById('currencyInput').value = data.currency;
+            }
+            if (data.filter_machined_only !== undefined) {
+                document.getElementById('filterMachinedCheck').checked = Boolean(data.filter_machined_only);
+            }
+
+            itemsTableBody.innerHTML = '';
+            const items = data.items || [];
+
+            // Pre-process items to auto-group split batches sharing the same Client PO Item No
+            const clientGroups = {};
+            items.forEach(it => {
+                const cNo = String(it.client_po_item_no || '').trim();
+                if (cNo) {
+                    if (!clientGroups[cNo]) clientGroups[cNo] = [];
+                    clientGroups[cNo].push(it);
+                }
+            });
+
+            Object.keys(clientGroups).forEach(cNo => {
+                const grp = clientGroups[cNo];
+                if (grp.length > 1) {
+                    let total = 0;
+                    grp.forEach(it => {
+                        total += extractQtyNumber(it.qty);
+                    });
+                    const fmtTotal = Number.isInteger(total) ? total : total.toFixed(2);
+                    grp.forEach(it => {
+                        const curr = extractQtyNumber(it.qty);
+                        const fmtCurr = Number.isInteger(curr) ? curr : curr.toFixed(2);
+                        it.qty = `${fmtCurr} OF ${fmtTotal}`;
+                        it.total_qty = total;
+                        it.group_id = 'grp-' + cNo;
+                    });
+                }
+            });
+
+            items.forEach((item, index) => {
+                addRow(item, index + 1);
+            });
+            updateSelectionBar();
+        }
+
+        function addRow(item = {}, slNo = null) {
+            const rowCount = itemsTableBody.rows.length;
+            const currentSlNo = slNo || (rowCount + 1);
+            const tr = document.createElement('tr');
+
+            const pkgType = item.package_type || 'Pallet';
+            const pkgNo = item.package_no || '1';
+            const rawQty = String(item.qty || '1.00').trim();
+
+            let totalQty = item.total_qty || 1;
+            const ofMatch = rawQty.match(/([\d.]+)\s*(?:OF|of)\s*([\d.]+)/i);
+            if (ofMatch) {
+                totalQty = parseFloat(ofMatch[2]) || 1;
+            } else if (!item.total_qty) {
+                totalQty = parseFloat(rawQty.replace(/,/g, '')) || 1;
+            }
+
+            const clientPoItVal = item.client_po_item_no || currentSlNo;
+            const groupId = item.group_id || ('grp-' + clientPoItVal);
+            tr.setAttribute('data-group-id', groupId);
+            tr.setAttribute('data-total-qty', totalQty);
+            
+            const descVal = item.description || '';
+            const remarksVal = item.remarks || '';
+            const makeVal = item.make || autoDetectMakeJs(descVal + ' ' + remarksVal);
+            const detectedCoo = item.country_of_origin || autoDetectCooJs(makeVal, descVal, remarksVal);
+            const detectedHs = item.hs_code || autoDetectHsJs(descVal);
+
+            tr.setAttribute('data-hs-code', detectedHs);
+            tr.setAttribute('data-coo', detectedCoo);
+
+            tr.innerHTML = `
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input item-select-check" onchange="updateSelectionBar()">
+                </td>
+                <td class="text-center fw-semibold row-sl-no">${currentSlNo}</td>
+                <td class="internal-col text-center">
+                    <input type="text" class="form-control form-control-sm text-center item-client-po-item-no" value="${escapeHtml(clientPoItVal)}" placeholder="1" onchange="onClientPoItemNoChange(this)">
+                </td>
+                <td>
+                    <textarea class="form-control desc item-desc" placeholder="Item Description" oninput="onItemDetailsChange(this)">${escapeHtml(item.description || '')}</textarea>
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-qty" value="${escapeHtml(item.qty || '1.00')}" oninput="calculateRowAmount(this)" onchange="validateQtyChange(this)">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-uom" value="${escapeHtml(item.uom || 'pcs')}">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-end item-rate" value="${escapeHtml(item.rate || '')}" placeholder="0.00" oninput="calculateRowAmount(this)">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-end item-amount fw-semibold" value="${escapeHtml(item.amount || '')}" placeholder="0.00">
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select form-select-sm item-pkg-type" style="max-width: 90px; font-size: 0.8rem;">
+                            <option value="Pallet" ${pkgType === 'Pallet' ? 'selected' : ''}>Pallet</option>
+                            <option value="Box" ${pkgType === 'Box' ? 'selected' : ''}>Box</option>
+                            <option value="Crate" ${pkgType === 'Crate' ? 'selected' : ''}>Crate</option>
+                            <option value="Wooden Box" ${pkgType === 'Wooden Box' ? 'selected' : ''}>W.Box</option>
+                            <option value="Carton" ${pkgType === 'Carton' ? 'selected' : ''}>Carton</option>
+                            <option value="Bundle" ${pkgType === 'Bundle' ? 'selected' : ''}>Bundle</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm text-center item-pkg-no" value="${escapeHtml(pkgNo)}" placeholder="#" style="max-width: 45px; font-size: 0.8rem;">
+                    </div>
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-heat" value="${escapeHtml(item.heat_number || '')}" placeholder="Heat #">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-cert" value="${escapeHtml(item.certificate_number || '')}" placeholder="Cert #">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-make" value="${escapeHtml(makeVal)}" placeholder="MAKE" oninput="onItemDetailsChange(this)">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm item-remarks" value="${escapeHtml(item.remarks || '')}" placeholder="Remarks" oninput="onItemDetailsChange(this)">
+                </td>
+                <td class="internal-col">
+                    <input type="text" class="form-control form-control-sm item-supplier-name" list="suppliersList" value="${escapeHtml(item.supplier_name || '')}" placeholder="Supplier">
+                </td>
+                <td class="internal-col">
+                    <input type="text" class="form-control form-control-sm text-center item-supplier-po" value="${escapeHtml(item.supplier_po || '')}" placeholder="PO #">
+                </td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success btn-sm py-0 px-1" onclick="splitRow(this)" title="Split row for multi-heat"><i class="bi bi-plus-square"></i></button>
+                        <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="deleteRow(this)" title="Delete Row"><i class="bi bi-trash"></i></button>
+                    </div>
+                </td>
+            `;
+            itemsTableBody.appendChild(tr);
+            reindexRows();
+        }
+
+        // --- Multi-Select & Selection Quick Bar ---
+        function toggleSelectAll(masterCheckbox) {
+            const checks = itemsTableBody.querySelectorAll('.item-select-check');
+            checks.forEach(cb => cb.checked = masterCheckbox.checked);
+            updateSelectionBar();
+        }
+
+        function deselectAll() {
+            document.getElementById('selectAllCheckbox').checked = false;
+            const checks = itemsTableBody.querySelectorAll('.item-select-check');
+            checks.forEach(cb => cb.checked = false);
+            updateSelectionBar();
+        }
+
+        function getSelectedRows() {
+            const rows = [];
+            itemsTableBody.querySelectorAll('tr').forEach(tr => {
+                const cb = tr.querySelector('.item-select-check');
+                if (cb && cb.checked) rows.push(tr);
+            });
+            return rows;
+        }
+
+        function updateSelectionBar() {
+            const selectedRows = getSelectedRows();
+            const totalRows = itemsTableBody.rows.length;
+            const count = selectedRows.length;
+
+            const bar = document.getElementById('selectionQuickBar');
+            const badge = document.getElementById('selectedCountBadge');
+            const masterCheck = document.getElementById('selectAllCheckbox');
+
+            badge.innerText = `${count} Selected`;
+
+            if (count > 0) {
+                bar.classList.remove('d-none');
+            } else {
+                bar.classList.add('d-none');
+            }
+
+            if (masterCheck) {
+                masterCheck.checked = (count === totalRows && totalRows > 0);
+            }
+
+            // Toggle active row styling
+            itemsTableBody.querySelectorAll('tr').forEach(tr => {
+                const cb = tr.querySelector('.item-select-check');
+                if (cb && cb.checked) {
+                    tr.classList.add('table-warning');
+                } else {
+                    tr.classList.remove('table-warning');
+                }
+            });
+        }
+
+        function bulkSetPackaging(pkgType) {
+            const selectedRows = getSelectedRows();
+            const targets = selectedRows.length > 0 ? selectedRows : Array.from(itemsTableBody.querySelectorAll('tr'));
+            targets.forEach(row => {
+                const select = row.querySelector('.item-pkg-type');
+                if (select) select.value = pkgType;
+            });
+            alert(`Updated packaging to "${pkgType}" for ${targets.length} item(s).`);
+        }
+
+        function deleteSelectedRows() {
+            const selectedRows = getSelectedRows();
+            if (selectedRows.length === 0) {
+                alert('Please select at least one item using the checkboxes.');
+                return;
+            }
+            if (!confirm(`Are you sure you want to delete ${selectedRows.length} selected row(s)?`)) return;
+
+            selectedRows.forEach(r => r.remove());
+            reindexRows();
+            updateSelectionBar();
+        }
+
+        // --- Supplier PO & Heat Entry Portal Modal ---
+        let currentSupplierModalFilter = 'selected';
+
+        function openSupplierPOModal() {
+            const selectedRows = getSelectedRows();
+            currentSupplierModalFilter = selectedRows.length > 0 ? 'selected' : 'all';
+            renderSupplierModalTable();
+            const modal = new bootstrap.Modal(document.getElementById('supplierPOModal'));
+            modal.show();
+        }
+
+        function filterSupplierModal(mode) {
+            currentSupplierModalFilter = mode;
+            const allBtn = document.getElementById('suppFilterAllBtn');
+            const selBtn = document.getElementById('suppFilterSelBtn');
+            if (allBtn && selBtn) {
+                allBtn.classList.toggle('active', mode === 'all');
+                allBtn.classList.toggle('btn-primary', mode === 'all');
+                allBtn.classList.toggle('btn-outline-secondary', mode !== 'all');
+                selBtn.classList.toggle('active', mode === 'selected');
+                selBtn.classList.toggle('btn-primary', mode === 'selected');
+                selBtn.classList.toggle('btn-outline-primary', mode !== 'selected');
+            }
+            renderSupplierModalTable();
+        }
+
+        function renderSupplierModalTable() {
+            const selectedRows = getSelectedRows();
+            const allRows = Array.from(itemsTableBody.querySelectorAll('tr'));
+            
+            const totalCountEl = document.getElementById('suppModalTotalCount');
+            const selCountEl = document.getElementById('poSelectedCount');
+            if (totalCountEl) totalCountEl.innerText = allRows.length;
+            if (selCountEl) selCountEl.innerText = selectedRows.length;
+
+            const targets = (currentSupplierModalFilter === 'selected' && selectedRows.length > 0) ? selectedRows : allRows;
+            const tbody = document.querySelector('#poItemsPreviewTable tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            targets.forEach((r) => {
+                const sl = r.querySelector('.row-sl-no').innerText;
+                const clientPoIt = r.querySelector('.item-client-po-item-no')?.value || sl;
+                const desc = r.querySelector('.item-desc').value;
+                const qty = r.querySelector('.item-qty').value;
+                const uom = r.querySelector('.item-uom').value;
+                const supp = r.querySelector('.item-supplier-name').value;
+                const suppPo = r.querySelector('.item-supplier-po').value;
+                const heat = r.querySelector('.item-heat').value;
+                const cert = r.querySelector('.item-cert').value;
+                const make = r.querySelector('.item-make').value || autoDetectMakeJs(desc + ' ' + (r.querySelector('.item-remarks')?.value || ''));
+
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-sl-no', sl);
+                tr.innerHTML = `
+                    <td class="text-center fw-semibold font-monospace">${sl}</td>
+                    <td class="text-center font-monospace">${escapeHtml(clientPoIt)}</td>
+                    <td style="font-size:0.83rem;"><div style="max-height:48px; overflow-y:auto;">${escapeHtml(desc)}</div></td>
+                    <td class="text-center font-monospace small">${escapeHtml(qty)} ${escapeHtml(uom)}</td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm supp-modal-name" list="suppliersList" value="${escapeHtml(supp)}" placeholder="Supplier Name">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center supp-modal-po font-monospace" value="${escapeHtml(suppPo)}" placeholder="PO #">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center supp-modal-heat font-monospace fw-semibold" value="${escapeHtml(heat)}" placeholder="Heat #">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center supp-modal-cert font-monospace" value="${escapeHtml(cert)}" placeholder="Cert #">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center supp-modal-make" value="${escapeHtml(make)}" placeholder="MAKE">
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function bulkFillModalSupplier() {
+            const sName = document.getElementById('modalSupplierName').value.trim();
+            const sPO = document.getElementById('modalSupplierPO').value.trim();
+            if (!sName && !sPO) {
+                alert('Please enter a Supplier Name or Supplier PO # in the bulk input boxes above.');
+                return;
+            }
+            const modalRows = document.querySelectorAll('#poItemsPreviewTable tbody tr');
+            modalRows.forEach(mr => {
+                if (sName) mr.querySelector('.supp-modal-name').value = sName;
+                if (sPO) mr.querySelector('.supp-modal-po').value = sPO;
+            });
+        }
+
+        function applySupplierPO() {
+            const modalRows = document.querySelectorAll('#poItemsPreviewTable tbody tr');
+            const mainRows = Array.from(itemsTableBody.querySelectorAll('tr'));
+            let updatedCount = 0;
+
+            modalRows.forEach(mr => {
+                const sl = mr.getAttribute('data-sl-no');
+                const sName = mr.querySelector('.supp-modal-name').value.trim();
+                const sPO = mr.querySelector('.supp-modal-po').value.trim();
+                const heat = mr.querySelector('.supp-modal-heat').value.trim();
+                const cert = mr.querySelector('.supp-modal-cert').value.trim();
+                const make = mr.querySelector('.supp-modal-make').value.trim();
+
+                const mainTr = mainRows.find(r => r.querySelector('.row-sl-no').innerText === sl);
+                if (mainTr) {
+                    mainTr.querySelector('.item-supplier-name').value = sName;
+                    mainTr.querySelector('.item-supplier-po').value = sPO;
+                    mainTr.querySelector('.item-heat').value = heat;
+                    mainTr.querySelector('.item-cert').value = cert;
+                    mainTr.querySelector('.item-make').value = make;
+                    onItemDetailsChange(mainTr.querySelector('.item-make'));
+                    updatedCount++;
+                }
+            });
+
+            bootstrap.Modal.getInstance(document.getElementById('supplierPOModal')).hide();
+            alert(`Applied Supplier, Heat Numbers, and Certificate details to ${updatedCount} item(s) on worksheet!`);
+        }
+
+        function autoEstimateUnitWeightJs(descText = '', uom = 'EA') {
+            const d = String(descText).toUpperCase();
+            if (/\b(DN\s*50|2"|2\s*INCH)\b/.test(d)) return /#3000/.test(d) ? '0.75' : '1.10';
+            if (/\b(DN\s*25|1"|1\s*INCH)\b/.test(d)) return /#3000/.test(d) ? '0.35' : '0.50';
+            if (/\b(DN\s*20|3\/4")\b/.test(d)) return /#3000/.test(d) ? '0.20' : '0.25';
+            if (/\b(DN\s*15|1\/2")\b/.test(d)) return /#3000/.test(d) ? '0.10' : '0.15';
+            if (/\b(DN\s*10|3\/8")\b/.test(d)) return /#3000/.test(d) ? '0.05' : '0.08';
+            if (/FLANGE/.test(d)) return '4.50';
+            if (/VALVE/.test(d)) return '3.50';
+            if (/TEE/.test(d)) return '0.80';
+            if (/ELBOW/.test(d)) return '0.60';
+            if (/PLUG|NIPPLE/.test(d)) return '0.15';
+            return '0.50';
+        }
+
+        // --- CIPL Builder Modal ---
+        function openCIPLConfigModal() {
+            const selectedRows = getSelectedRows();
+            const targets = selectedRows.length > 0 ? selectedRows : Array.from(itemsTableBody.querySelectorAll('tr'));
+
+            const tbody = document.querySelector('#ciplItemsModalTable tbody');
+            tbody.innerHTML = '';
+            let totalAmount = 0;
+            let totalNetWt = 0;
+
+            const curr = document.getElementById('currencyInput')?.value || 'USD';
+            if (document.getElementById('modalCiplCurrency')) {
+                document.getElementById('modalCiplCurrency').value = curr;
+            }
+
+            // Map package dimensions cache
+            const packageDimsCache = {};
+
+            targets.forEach((r, idx) => {
+                const sl = r.querySelector('.row-sl-no').innerText;
+                const desc = r.querySelector('.item-desc').value;
+                const make = r.querySelector('.item-make')?.value || autoDetectMakeJs(desc + ' ' + (r.querySelector('.item-remarks')?.value || ''));
+                const remarks = r.querySelector('.item-remarks')?.value || '';
+                const rawQty = r.querySelector('.item-qty').value;
+                const uom = r.querySelector('.item-uom').value;
+                const pkgType = r.querySelector('.item-pkg-type').value;
+                const pkgNo = r.querySelector('.item-pkg-no').value;
+                const rate = r.querySelector('.item-rate').value;
+                const amt = r.querySelector('.item-amount').value;
+                
+                const qtyNum = extractQtyNumber(rawQty);
+
+                // Weight & Dimensions
+                const customUnitWt = r.getAttribute('data-unit-weight');
+                const unitWt = customUnitWt || autoEstimateUnitWeightJs(desc, uom);
+                
+                const customTotWt = r.getAttribute('data-total-weight');
+                const totWt = customTotWt || (qtyNum * parseFloat(unitWt)).toFixed(2);
+                
+                const pkgKey = `${pkgType}_${pkgNo}`;
+                const customDims = r.getAttribute('data-dimensions');
+                let dims = customDims || packageDimsCache[pkgKey] || (pkgNo === '1' ? '25 X 20 X 10 CM' : '35 X 20 X 15 CM');
+                packageDimsCache[pkgKey] = dims;
+
+                // Dynamically detect Country of Origin from live make, desc & remarks
+                const customCoo = r.getAttribute('data-coo-custom');
+                const coo = customCoo || autoDetectCooJs(make, desc, remarks) || r.getAttribute('data-coo') || 'Italy';
+
+                // Dynamically detect HS code from live desc
+                const customHs = r.getAttribute('data-hs-code-custom');
+                const hs = customHs || autoDetectHsJs(desc) || r.getAttribute('data-hs-code') || '7307.93.00';
+
+                totalAmount += parseFloat(amt.replace(/,/g, '')) || 0;
+                totalNetWt += parseFloat(totWt) || 0;
+
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-target-row-id', sl);
+                tr.setAttribute('data-qty-num', qtyNum);
+                tr.innerHTML = `
+                    <td class="text-center">${sl}</td>
+                    <td style="font-size:0.83rem;"><div style="max-height:48px; overflow-y:auto;">${escapeHtml(desc)}</div></td>
+                    <td class="text-center font-monospace">${escapeHtml(rawQty)} ${escapeHtml(uom)}</td>
+                    <td>
+                        <div class="input-group input-group-sm">
+                            <select class="form-select form-select-sm modal-cipl-pkg-type" style="font-size:0.8rem;" onchange="onPackageSelectionChange(this)">
+                                <option value="Pallet" ${pkgType === 'Pallet' ? 'selected' : ''}>Pallet</option>
+                                <option value="Box" ${pkgType === 'Box' ? 'selected' : ''}>Box</option>
+                                <option value="Crate" ${pkgType === 'Crate' ? 'selected' : ''}>Crate</option>
+                                <option value="Wooden Box" ${pkgType === 'Wooden Box' ? 'selected' : ''}>W.Box</option>
+                            </select>
+                            <input type="text" class="form-control form-control-sm text-center modal-cipl-pkg-no" value="${escapeHtml(pkgNo)}" style="max-width:38px; font-size:0.8rem;" oninput="onPackageSelectionChange(this)">
+                        </div>
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-end modal-cipl-rate font-monospace" value="${escapeHtml(rate)}" placeholder="0.00" oninput="calculateModalRowAmount(this)">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-end fw-semibold modal-cipl-amt font-monospace" value="${escapeHtml(amt)}" placeholder="0.00" oninput="updateModalTotals()">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-end modal-cipl-unit-wt font-monospace" value="${escapeHtml(unitWt)}" placeholder="0.00" oninput="calculateModalRowWeight(this)">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-end modal-cipl-tot-wt font-monospace fw-semibold" value="${escapeHtml(totWt)}" placeholder="0.00" oninput="updateModalTotals()">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center modal-cipl-dims font-monospace" value="${escapeHtml(dims)}" placeholder="L x W x H CM" oninput="onPackageDimensionChange(this)">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center modal-cipl-hs font-monospace" value="${escapeHtml(hs)}" placeholder="7307.93.00">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm text-center modal-cipl-coo" value="${escapeHtml(coo)}" placeholder="Country of Origin">
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            updateModalTotalDisplay(totalAmount, totalNetWt, curr);
+
+            const modal = new bootstrap.Modal(document.getElementById('ciplConfigModal'));
+            modal.show();
+        }
+
+        function onPackageDimensionChange(input) {
+            const tr = input.closest('tr');
+            if (!tr) return;
+            const pkgType = tr.querySelector('.modal-cipl-pkg-type')?.value;
+            const pkgNo = tr.querySelector('.modal-cipl-pkg-no')?.value?.trim();
+            const newDims = input.value;
+
+            const allModalRows = document.querySelectorAll('#ciplItemsModalTable tbody tr');
+            allModalRows.forEach(r => {
+                if (r !== tr) {
+                    const rType = r.querySelector('.modal-cipl-pkg-type')?.value;
+                    const rNo = r.querySelector('.modal-cipl-pkg-no')?.value?.trim();
+                    if (rType === pkgType && rNo === pkgNo) {
+                        const dimsInput = r.querySelector('.modal-cipl-dims');
+                        if (dimsInput) dimsInput.value = newDims;
+                    }
+                }
+            });
+        }
+
+        function onPackageSelectionChange(selectOrInput) {
+            const tr = selectOrInput.closest('tr');
+            if (!tr) return;
+            const pkgType = tr.querySelector('.modal-cipl-pkg-type')?.value;
+            const pkgNo = tr.querySelector('.modal-cipl-pkg-no')?.value?.trim();
+
+            // Check if another row already has dimensions for this package
+            const allModalRows = document.querySelectorAll('#ciplItemsModalTable tbody tr');
+            let existingDims = '';
+            allModalRows.forEach(r => {
+                if (r !== tr && !existingDims) {
+                    const rType = r.querySelector('.modal-cipl-pkg-type')?.value;
+                    const rNo = r.querySelector('.modal-cipl-pkg-no')?.value?.trim();
+                    if (rType === pkgType && rNo === pkgNo) {
+                        existingDims = r.querySelector('.modal-cipl-dims')?.value?.trim();
+                    }
+                }
+            });
+
+            if (existingDims) {
+                tr.querySelector('.modal-cipl-dims').value = existingDims;
+            } else {
+                tr.querySelector('.modal-cipl-dims').value = (pkgNo === '1' ? '25 X 20 X 10 CM' : '35 X 20 X 15 CM');
+            }
+        }
+
+        function calculateModalRowWeight(input) {
+            const tr = input.closest('tr');
+            if (!tr) return;
+            const qty = parseFloat(tr.getAttribute('data-qty-num')) || 1;
+            const unitWt = parseFloat(input.value.replace(/,/g, '')) || 0;
+            const totWtInput = tr.querySelector('.modal-cipl-tot-wt');
+            if (totWtInput) {
+                totWtInput.value = (qty * unitWt).toFixed(2);
+            }
+            updateModalTotals();
+        }
+
+        function calculateModalRowAmount(input) {
+            const tr = input.closest('tr');
+            if (!tr) return;
+            const qty = parseFloat(tr.getAttribute('data-qty-num')) || 1;
+            const rate = parseFloat(input.value.replace(/,/g, '')) || 0;
+            const amtInput = tr.querySelector('.modal-cipl-amt');
+            if (amtInput) {
+                amtInput.value = (qty * rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+            updateModalTotals();
+        }
+
+        function updateModalTotals() {
+            const modalRows = document.querySelectorAll('#ciplItemsModalTable tbody tr');
+            let totalAmount = 0;
+            let totalNetWt = 0;
+            modalRows.forEach(mr => {
+                const amtVal = parseFloat(mr.querySelector('.modal-cipl-amt')?.value.replace(/,/g, '')) || 0;
+                const wtVal = parseFloat(mr.querySelector('.modal-cipl-tot-wt')?.value.replace(/,/g, '')) || 0;
+                totalAmount += amtVal;
+                totalNetWt += wtVal;
+            });
+            const curr = document.getElementById('modalCiplCurrency')?.value || document.getElementById('currencyInput')?.value || 'USD';
+            updateModalTotalDisplay(totalAmount, totalNetWt, curr);
+        }
+
+        function updateModalCurrency(newCurr) {
+            if (document.getElementById('currencyInput')) {
+                document.getElementById('currencyInput').value = newCurr;
+            }
+            updateModalTotals();
+        }
+
+        function updateModalTotalDisplay(totalAmount, totalNetWt, currency) {
+            document.getElementById('ciplModalTotalAmt').innerText = `${currency} ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            if (document.getElementById('ciplModalTotalNetWt')) {
+                document.getElementById('ciplModalTotalNetWt').innerText = `${totalNetWt.toFixed(2)} KGS`;
+            }
+        }
+
+        function setAllModalPackaging(pkgType) {
+            document.querySelectorAll('#ciplItemsModalTable .modal-cipl-pkg-type').forEach(sel => sel.value = pkgType);
+        }
+
+        function applyCIPLAndDownload() {
+            const modalRows = document.querySelectorAll('#ciplItemsModalTable tbody tr');
+            const mainRows = itemsTableBody.querySelectorAll('tr');
+
+            modalRows.forEach(mr => {
+                const targetSl = mr.getAttribute('data-target-row-id');
+                const pkgType = mr.querySelector('.modal-cipl-pkg-type').value;
+                const pkgNo = mr.querySelector('.modal-cipl-pkg-no').value;
+                const unitRate = mr.querySelector('.modal-cipl-rate')?.value.trim();
+                const amount = mr.querySelector('.modal-cipl-amt')?.value.trim();
+                const unitWt = mr.querySelector('.modal-cipl-unit-wt')?.value.trim();
+                const totWt = mr.querySelector('.modal-cipl-tot-wt')?.value.trim();
+                const dims = mr.querySelector('.modal-cipl-dims')?.value.trim();
+                const hs = mr.querySelector('.modal-cipl-hs')?.value.trim();
+                const coo = mr.querySelector('.modal-cipl-coo')?.value.trim();
+
+                mainRows.forEach(mrMain => {
+                    if (mrMain.querySelector('.row-sl-no').innerText === targetSl) {
+                        mrMain.querySelector('.item-pkg-type').value = pkgType;
+                        mrMain.querySelector('.item-pkg-no').value = pkgNo;
+                        if (unitRate) mrMain.querySelector('.item-rate').value = unitRate;
+                        if (amount) mrMain.querySelector('.item-amount').value = amount;
+                        
+                        mrMain.setAttribute('data-unit-weight', unitWt);
+                        mrMain.setAttribute('data-total-weight', totWt);
+                        mrMain.setAttribute('data-dimensions', dims);
+                        mrMain.setAttribute('data-hs-code', hs);
+                        mrMain.setAttribute('data-hs-code-custom', hs);
+                        mrMain.setAttribute('data-coo', coo);
+                        mrMain.setAttribute('data-coo-custom', coo);
+                    }
+                });
+            });
+
+            const selCurr = document.getElementById('modalCiplCurrency')?.value;
+            if (selCurr && document.getElementById('currencyInput')) {
+                document.getElementById('currencyInput').value = selCurr;
+            }
+
+            bootstrap.Modal.getInstance(document.getElementById('ciplConfigModal')).hide();
+            downloadCIPL();
+        }
+
+        function onClientPoItemNoChange(input) {
+            recalculateClientItemGroups();
+        }
+
+        function recalculateClientItemGroups() {
+            const rows = Array.from(itemsTableBody.querySelectorAll('tr'));
+            const clientGroups = {};
+
+            rows.forEach(r => {
+                const cNo = r.querySelector('.item-client-po-item-no')?.value.trim();
+                if (cNo) {
+                    if (!clientGroups[cNo]) clientGroups[cNo] = [];
+                    clientGroups[cNo].push(r);
+                }
+            });
+
+            Object.keys(clientGroups).forEach(cNo => {
+                const grp = clientGroups[cNo];
+                if (grp.length > 1) {
+                    let total = 0;
+                    grp.forEach(r => {
+                        total += extractQtyNumber(r.querySelector('.item-qty').value);
+                    });
+                    const fmtTotal = Number.isInteger(total) ? total : total.toFixed(2);
+                    grp.forEach(r => {
+                        r.setAttribute('data-group-id', 'grp-' + cNo);
+                        r.setAttribute('data-total-qty', total);
+                        const currQtyInput = r.querySelector('.item-qty');
+                        const currVal = extractQtyNumber(currQtyInput.value);
+                        const fmtCurr = Number.isInteger(currVal) ? currVal : currVal.toFixed(2);
+                        currQtyInput.value = `${fmtCurr} OF ${fmtTotal}`;
+                        calculateRowAmount(currQtyInput);
+                    });
+                }
+            });
+        }
+
+        function extractQtyNumber(qtyStr) {
+            if (!qtyStr) return 0;
+            const str = String(qtyStr).trim();
+            const ofMatch = str.match(/^([\d.]+)\s*(?:OF|of)/i);
+            if (ofMatch) {
+                return parseFloat(ofMatch[1]) || 0;
+            }
+            return parseFloat(str.replace(/,/g, '')) || 0;
+        }
+
+        function calculateRowAmount(input) {
+            const tr = input.closest('tr');
+            const qtyStr = tr.querySelector('.item-qty').value.trim();
+            const rateStr = tr.querySelector('.item-rate').value.replace(/,/g, '').trim();
+            const amtInput = tr.querySelector('.item-amount');
+            
+            const qty = extractQtyNumber(qtyStr);
+            const rate = parseFloat(rateStr);
+            
+            if (!isNaN(qty) && !isNaN(rate)) {
+                amtInput.value = (qty * rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        }
+
+        function validateQtyChange(input) {
+            const tr = input.closest('tr');
+            const groupId = tr.getAttribute('data-group-id');
+            const totalQty = parseFloat(tr.getAttribute('data-total-qty')) || extractQtyNumber(input.value) || 1;
+
+            if (!groupId) {
+                calculateRowAmount(input);
+                return;
+            }
+
+            const groupRows = Array.from(itemsTableBody.querySelectorAll(`tr[data-group-id="${groupId}"]`));
+            if (groupRows.length <= 1) {
+                // Single row item
+                calculateRowAmount(input);
+                return;
+            }
+
+            // Calculate sum of other rows in group
+            let otherSum = 0;
+            groupRows.forEach(r => {
+                if (r !== tr) {
+                    otherSum += extractQtyNumber(r.querySelector('.item-qty').value);
+                }
+            });
+
+            const maxAllowed = Math.max(0, totalQty - otherSum);
+            let enteredQty = extractQtyNumber(input.value);
+
+            if (enteredQty <= 0) {
+                enteredQty = 1;
+            }
+
+            if (enteredQty > maxAllowed) {
+                alert(`Cannot exceed total PO quantity (${totalQty}).\nOnly ${maxAllowed} pc(s) available for this split batch.`);
+                enteredQty = maxAllowed;
+            }
+
+            const fmtEntered = Number.isInteger(enteredQty) ? enteredQty : enteredQty.toFixed(2);
+            const fmtTotal = Number.isInteger(totalQty) ? totalQty : totalQty.toFixed(2);
+
+            input.value = `${fmtEntered} OF ${fmtTotal}`;
+            calculateRowAmount(input);
+        }
+
+        function setAllPackaging(pkgType) {
+            const rows = itemsTableBody.querySelectorAll('tr');
+            rows.forEach((row) => {
+                const select = row.querySelector('.item-pkg-type');
+                if (select) select.value = pkgType;
+            });
+        }
+
+        function splitRow(btn) {
+            const currentRow = btn.closest('tr');
+            const slNo = currentRow.querySelector('.row-sl-no').innerText.trim();
+            const clientPoIt = currentRow.querySelector('.item-client-po-item-no')?.value || slNo;
+            const desc = currentRow.querySelector('.item-desc').value;
+            const rawQty = currentRow.querySelector('.item-qty').value.trim();
+            const uom = currentRow.querySelector('.item-uom').value;
+            const rate = currentRow.querySelector('.item-rate')?.value || '';
+            const pkgType = currentRow.querySelector('.item-pkg-type')?.value || 'Pallet';
+            const pkgNo = currentRow.querySelector('.item-pkg-no')?.value || '1';
+            const heat = currentRow.querySelector('.item-heat').value;
+            const cert = currentRow.querySelector('.item-cert').value;
+            const make = currentRow.querySelector('.item-make').value;
+            const remarks = currentRow.querySelector('.item-remarks').value;
+            const supplier = currentRow.querySelector('.item-supplier-name').value;
+            const supplierPo = currentRow.querySelector('.item-supplier-po').value;
+            const hs = currentRow.getAttribute('data-hs-code') || '7307.93.00';
+            const coo = currentRow.getAttribute('data-coo') || 'France';
+
+            let groupId = currentRow.getAttribute('data-group-id');
+            if (!groupId) {
+                groupId = 'grp-' + clientPoIt;
+                currentRow.setAttribute('data-group-id', groupId);
+            }
+
+            // Extract total qty and current batch qty
+            let totalQty = parseFloat(currentRow.getAttribute('data-total-qty'));
+            let match = rawQty.match(/([\d.]+)\s*(?:OF|of)\s*([\d.]+)/i);
+            if (match) {
+                totalQty = totalQty || parseFloat(match[2]);
+            } else {
+                totalQty = totalQty || parseFloat(rawQty.replace(/,/g, '')) || 1;
+            }
+            currentRow.setAttribute('data-total-qty', totalQty);
+
+            let currentBatchQty = extractQtyNumber(rawQty);
+            if (currentBatchQty <= 0) currentBatchQty = totalQty;
+
+            // Check if can be split
+            if (currentBatchQty <= 1 && totalQty <= 1) {
+                alert(`Item #${clientPoIt} has total quantity of ${totalQty} ${uom}. Cannot split 1 pc into multiple integer units.`);
+                return;
+            }
+
+            if (currentBatchQty <= 1) {
+                alert(`This batch already has quantity of 1 pc. Cannot split further.`);
+                return;
+            }
+
+            let split1 = 1;
+            let split2 = 1;
+
+            if (totalQty === 2 && currentBatchQty === 2) {
+                // Direct clean split 1 OF 2 and 1 OF 2 without prompt
+                split1 = 1;
+                split2 = 1;
+            } else {
+                // If larger quantity, ask how many pcs for first batch
+                const defaultVal = Math.floor(currentBatchQty / 2) || 1;
+                const inputVal = prompt(`Split Item #${clientPoIt} (${currentBatchQty} ${uom} available in this batch of ${totalQty} total).\n\nEnter Qty for 1st batch (e.g. 1 for "1 OF ${totalQty}"):`, defaultVal);
+                if (inputVal === null) return; // Cancelled
+
+                split1 = parseFloat(inputVal);
+                if (isNaN(split1) || split1 <= 0 || split1 >= currentBatchQty) {
+                    alert(`Please enter a valid partial quantity between 1 and ${currentBatchQty - 1}`);
+                    return;
+                }
+                split2 = (currentBatchQty - split1);
+            }
+
+            const fmtTotal = Number.isInteger(totalQty) ? totalQty : totalQty.toFixed(2);
+            const fmt1 = Number.isInteger(split1) ? split1 : split1.toFixed(2);
+            const fmt2 = Number.isInteger(split2) ? split2 : split2.toFixed(2);
+
+            // Update 1st batch row
+            currentRow.querySelector('.item-qty').value = `${fmt1} OF ${fmtTotal}`;
+            if (rate) {
+                currentRow.querySelector('.item-amount').value = (split1 * parseFloat(rate.replace(/,/g, ''))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+
+            // Create 2nd batch row directly below with SAME group ID, total Qty, and Client PO Item No
+            const newTr = document.createElement('tr');
+            newTr.setAttribute('data-group-id', groupId);
+            newTr.setAttribute('data-total-qty', totalQty);
+            newTr.setAttribute('data-hs-code', hs);
+            newTr.setAttribute('data-coo', coo);
+
+            newTr.innerHTML = `
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input item-select-check" onchange="updateSelectionBar()">
+                </td>
+                <td class="text-center fw-semibold row-sl-no">${slNo}</td>
+                <td class="internal-col text-center">
+                    <input type="text" class="form-control form-control-sm text-center item-client-po-item-no" value="${escapeHtml(clientPoIt)}">
+                </td>
+                <td>
+                    <textarea class="form-control desc item-desc" placeholder="Item Description">${escapeHtml(desc)}</textarea>
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-qty" value="${fmt2} OF ${fmtTotal}" oninput="calculateRowAmount(this)" onchange="validateQtyChange(this)">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-uom" value="${escapeHtml(uom)}">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-end item-rate" value="${escapeHtml(rate)}" placeholder="0.00" oninput="calculateRowAmount(this)">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-end item-amount fw-semibold" value="${rate ? (split2 * parseFloat(rate.replace(/,/g, ''))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" placeholder="0.00">
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select form-select-sm item-pkg-type" style="max-width: 90px; font-size: 0.8rem;">
+                            <option value="Pallet" ${pkgType === 'Pallet' ? 'selected' : ''}>Pallet</option>
+                            <option value="Box" ${pkgType === 'Box' ? 'selected' : ''}>Box</option>
+                            <option value="Crate" ${pkgType === 'Crate' ? 'selected' : ''}>Crate</option>
+                            <option value="Wooden Box" ${pkgType === 'Wooden Box' ? 'selected' : ''}>W.Box</option>
+                            <option value="Carton" ${pkgType === 'Carton' ? 'selected' : ''}>Carton</option>
+                            <option value="Bundle" ${pkgType === 'Bundle' ? 'selected' : ''}>Bundle</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm text-center item-pkg-no" value="${escapeHtml(pkgNo)}" placeholder="#" style="max-width: 45px; font-size: 0.8rem;">
+                    </div>
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-heat" value="" placeholder="Heat #2">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-cert" value="${escapeHtml(cert)}" placeholder="Cert #2">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-center item-make" value="${escapeHtml(make)}">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm item-remarks" value="${escapeHtml(remarks)}">
+                </td>
+                <td class="internal-col">
+                    <input type="text" class="form-control form-control-sm item-supplier-name" list="suppliersList" value="${escapeHtml(supplier)}" placeholder="Supplier">
+                </td>
+                <td class="internal-col">
+                    <input type="text" class="form-control form-control-sm text-center item-supplier-po" value="${escapeHtml(supplierPo)}" placeholder="PO #">
+                </td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success btn-sm py-0 px-1" onclick="splitRow(this)" title="Split row for multi-heat"><i class="bi bi-plus-square"></i></button>
+                        <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="deleteRow(this)" title="Delete Row"><i class="bi bi-trash"></i></button>
+                    </div>
+                </td>
+            `;
+            currentRow.parentNode.insertBefore(newTr, currentRow.nextSibling);
+            updateSelectionBar();
+        }
+
+        function deleteRow(btn) {
+            const tr = btn.closest('tr');
+            if (itemsTableBody.rows.length > 1) {
+                tr.remove();
+                reindexRows();
+                updateSelectionBar();
+            } else {
+                alert('Cannot delete the only row.');
+            }
+        }
+
+        function reindexRows() {
+            const rows = itemsTableBody.querySelectorAll('tr');
+            rows.forEach((row, idx) => {
+                row.querySelector('.row-sl-no').innerText = idx + 1;
+            });
+        }
+
+        function buildPayload() {
+            const items = [];
+            const rows = itemsTableBody.querySelectorAll('tr');
+
+            rows.forEach((row, idx) => {
+                items.push({
+                    sl_no: idx + 1,
+                    client_po_item_no: row.querySelector('.item-client-po-item-no')?.value.trim() || String(idx + 1),
+                    description: row.querySelector('.item-desc')?.value.trim() || '',
+                    qty: row.querySelector('.item-qty')?.value.trim() || '1.00',
+                    uom: row.querySelector('.item-uom')?.value.trim() || 'pcs',
+                    rate: row.querySelector('.item-rate')?.value.trim() || '',
+                    amount: row.querySelector('.item-amount')?.value.trim() || '',
+                    package_type: row.querySelector('.item-pkg-type')?.value || 'Pallet',
+                    package_no: row.querySelector('.item-pkg-no')?.value.trim() || '1',
+                    heat_number: row.querySelector('.item-heat')?.value.trim() || '',
+                    certificate_number: row.querySelector('.item-cert')?.value.trim() || '',
+                    make: row.querySelector('.item-make')?.value.trim() || '',
+                    remarks: row.querySelector('.item-remarks')?.value.trim() || '',
+                    supplier_name: row.querySelector('.item-supplier-name')?.value.trim() || '',
+                    supplier_po: row.querySelector('.item-supplier-po')?.value.trim() || '',
+                    hs_code: row.getAttribute('data-hs-code') || autoDetectHsJs(row.querySelector('.item-desc')?.value || '') || '7307.93.00',
+                    country_of_origin: row.getAttribute('data-coo') || autoDetectCooJs(row.querySelector('.item-make')?.value || '', row.querySelector('.item-desc')?.value || '', row.querySelector('.item-remarks')?.value || '') || 'Italy'
+                });
+            });
+
+            const payload = {
+                client: document.getElementById('clientInput').value.trim(),
+                po_number: document.getElementById('poInput').value.trim(),
+                msg_ref: document.getElementById('msgRefInput').value.trim(),
+                currency: document.getElementById('currencyInput')?.value || document.getElementById('modalCiplCurrency')?.value || 'USD',
+                filter_machined_only: document.getElementById('filterMachinedCheck').checked,
+                editor_username: document.getElementById('currentUsernameBadge')?.innerText.trim() || 'Admin',
+                items: items
+            };
+
+            if (currentSheetSnapshotId) {
+                payload.id = currentSheetSnapshotId;
+            }
+
+            return payload;
+        }
+
+        const MANUFACTURING_KEYWORDS = ["machined", "machining", "machine", "fabricated", "fabrication", "fabricate", "fab", "made from", "modified", "modify", "mod", "locally", "offered", "offer"];
+        function isMeaningfulRemark(text) {
+            if (!text) return false;
+            const lower = text.toLowerCase();
+            return MANUFACTURING_KEYWORDS.some(kw => new RegExp('\\b' + kw, 'i').test(lower));
+        }
+
+        let autoSaveTimer = null;
+        function triggerAutoSave() {
+            // Only autosave if editor is open and has items or header info
+            if (document.getElementById('editorSection').classList.contains('d-none')) return;
+            const badge = document.getElementById('autosaveStatusBadge');
+            if (badge) {
+                badge.className = 'badge bg-warning bg-opacity-25 text-dark border px-2 py-1';
+                badge.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" style="width:0.7rem;height:0.7rem;"></span>Syncing...';
+            }
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+            autoSaveTimer = setTimeout(() => {
+                saveWorksheetProgress(false, true);
+            }, 3000);
+        }
+
+        function saveWorksheetProgress(saveAsNewDraft = false, isAutosave = false) {
+            const payload = buildPayload();
+            if (!payload.items || payload.items.length === 0) return;
+
+            if (saveAsNewDraft) {
+                payload.save_as_new_draft = true;
+                delete payload.id; // generate new unique draft ID
+            }
+
+            const badge = document.getElementById('autosaveStatusBadge');
+            if (badge) {
+                badge.className = 'badge bg-warning bg-opacity-25 text-dark border px-2 py-1';
+                badge.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" style="width:0.7rem;height:0.7rem;"></span>Backing up...';
+            }
+
+            fetch('/api/save-worksheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.record) {
+                    currentSheetSnapshotId = data.record.id;
+                    fetchHistory();
+                    const now = new Date();
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    if (badge) {
+                        badge.className = 'badge bg-success bg-opacity-25 text-success border px-2 py-1';
+                        badge.innerHTML = `<i class="bi bi-cloud-check-fill text-success me-1"></i>Cloud Autosaved (${timeStr})`;
+                    }
+                    if (!isAutosave) {
+                        alert(saveAsNewDraft ? 'Created and saved as a NEW separate draft successfully!' : 'Worksheet draft saved successfully!');
+                    }
+                } else {
+                    if (badge) {
+                        badge.className = 'badge bg-danger bg-opacity-25 text-danger border px-2 py-1';
+                        badge.innerHTML = '<i class="bi bi-exclamation-circle-fill text-danger me-1"></i>Save failed';
+                    }
+                    if (!isAutosave) {
+                        alert('Error saving worksheet progress: ' + (data.error || 'Unknown error'));
+                    }
+                }
+            })
+            .catch(err => {
+                if (badge) {
+                    badge.className = 'badge bg-danger bg-opacity-25 text-danger border px-2 py-1';
+                    badge.innerHTML = '<i class="bi bi-exclamation-circle-fill text-danger me-1"></i>Save error';
+                }
+                if (!isAutosave) alert('Save failed: ' + err.message);
+            });
+        }
+
+        // --- Sales Orders & Multi-Draft History Portal ---
+        function fetchHistory(query = '') {
+            fetch(`/api/history?q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.sheets) {
+                        renderHistoryGrid(data.sheets);
+                    }
+                })
+                .catch(err => console.error("Error fetching history", err));
+        }
+
+        function filterHistory(query) {
+            fetchHistory(query);
+        }
+
+        function clearHistorySearch() {
+            document.getElementById('historySearchInput').value = '';
+            fetchHistory();
+        }
+
+        function renderHistoryGrid(sheets) {
+            const container = document.getElementById('historyListContainer');
+            
+            // Group drafts by Sales Order Key (msg_ref + po_number)
+            const orderGroups = {};
+            sheets.forEach(s => {
+                const soKey = (s.msg_ref || s.po_number || 'UNASSIGNED_SO').trim().toUpperCase();
+                if (!orderGroups[soKey]) {
+                    orderGroups[soKey] = {
+                        msg_ref: s.msg_ref,
+                        po_number: s.po_number,
+                        client: s.client,
+                        drafts: []
+                    };
+                }
+                orderGroups[soKey].drafts.push(s);
+            });
+
+            const groupKeys = Object.keys(orderGroups);
+            document.getElementById('historyTotalBadge').innerText = `${groupKeys.length} Order(s) | ${sheets.length} Draft(s)`;
+
+            if (groupKeys.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12 text-center py-4 text-muted">
+                        <i class="bi bi-inbox fs-1 d-block mb-2 text-warning"></i>
+                        No worked orders found matching your search.
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            groupKeys.forEach(key => {
+                const order = orderGroups[key];
+                const latestDraft = order.drafts[0];
+                const urls = latestDraft.file_urls || {};
+
+                html += `
+                <div class="col-lg-6 mb-3">
+                    <div class="card card-custom p-3 history-card h-100 shadow-sm border">
+                        <div class="d-flex justify-content-between align-items-start mb-2 border-bottom pb-2">
+                            <div>
+                                <span class="badge bg-dark fs-7 mb-1"><i class="bi bi-file-earmark-text me-1 text-warning"></i>SO: ${escapeHtml(order.msg_ref || 'N/A')}</span>
+                                <h6 class="fw-bold text-dark mb-0">${escapeHtml(order.client || 'Client Name')}</h6>
+                                <small class="text-muted">PO: <strong>${escapeHtml(order.po_number || 'N/A')}</strong></small>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-warning text-dark fs-7">${order.drafts.length} Draft(s)</span>
+                                <div class="text-muted small mt-1"><i class="bi bi-calendar3 me-1"></i>${escapeHtml(latestDraft.formatted_date || '')}</div>
+                            </div>
+                        </div>
+
+                        <!-- Draft Versions Accordion / List -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark small mb-1"><i class="bi bi-people me-1"></i>Draft Versions & Editors:</label>
+                            <div class="list-group list-group-flush border rounded" style="max-height: 140px; overflow-y: auto;">
+                                ${order.drafts.map((d, dIdx) => `
+                                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-1 px-2 ${d.id === currentSheetSnapshotId ? 'bg-warning bg-opacity-10 border-start border-warning border-3' : ''}">
+                                        <div>
+                                            <span class="badge bg-secondary text-white" style="font-size:0.7rem;"><i class="bi bi-person me-1"></i>${escapeHtml(d.editor_username || 'Admin')}</span>
+                                            <span class="small text-muted ms-1">${escapeHtml(d.formatted_date || '')}</span>
+                                            <span class="badge bg-light text-dark border ms-1" style="font-size:0.68rem;">${d.item_count || 0} items</span>
+                                        </div>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-xs btn-outline-primary py-0 px-1" onclick="restoreWorksheet('${d.id}')" title="Restore this draft state"><i class="bi bi-arrow-counterclockwise"></i> Open</button>
+                                            <button class="btn btn-xs btn-outline-danger py-0 px-1" onclick="deleteHistoryItem('${d.id}')" title="Delete draft"><i class="bi bi-trash"></i></button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Document Export Shortcuts -->
+                        <div class="d-flex flex-wrap gap-1 mb-2 pt-1">
+                            ${urls.client_excel_url ? `<a href="${urls.client_excel_url}" target="_blank" class="btn btn-xs btn-outline-success"><i class="bi bi-file-earmark-excel me-1"></i>Client Summary</a>` : ''}
+                            ${urls.stores_excel_url ? `<a href="${urls.stores_excel_url}" target="_blank" class="btn btn-xs btn-outline-dark"><i class="bi bi-shield-lock me-1"></i>Stores Sheet</a>` : ''}
+                            ${urls.cipl_excel_url ? `<a href="${urls.cipl_excel_url}" target="_blank" class="btn btn-xs btn-outline-primary"><i class="bi bi-file-earmark-spreadsheet me-1"></i>CIPL Doc</a>` : ''}
+                            ${urls.supplier_pdf_zip_url ? `<a href="${urls.supplier_pdf_zip_url}" target="_blank" class="btn btn-xs btn-outline-danger"><i class="bi bi-file-zip me-1"></i>Supplier POs</a>` : ''}
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mt-auto pt-2 border-top">
+                            <button class="btn btn-sm btn-msg-primary" onclick="restoreWorksheet('${latestDraft.id}')">
+                                <i class="bi bi-pencil-square me-1"></i>Edit Latest Draft
+                            </button>
+                            <button class="btn btn-sm btn-outline-info text-dark" onclick="openExcelPreviewModal()">
+                                <i class="bi bi-eye me-1"></i>Preview
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function restoreWorksheet(sheetId) {
+            fetch(`/api/history/${sheetId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.sheet) {
+                        currentSheetSnapshotId = data.sheet.id;
+                        populateEditor(data.sheet);
+                        editorSection.classList.remove('d-none');
+                        editorSection.scrollIntoView({ behavior: 'smooth' });
+                    }
+                })
+                .catch(err => alert('Failed to restore worksheet: ' + err.message));
+        }
+
+        function deleteHistoryItem(sheetId) {
+            if (!confirm('Are you sure you want to delete this draft record?')) return;
+            fetch(`/api/history/${sheetId}`, { method: 'DELETE' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        fetchHistory(document.getElementById('historySearchInput').value);
+                    }
+                });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        function openExcelPreviewModal() {
+            renderPreview(currentPreviewIsInternal);
+            const previewModal = new bootstrap.Modal(document.getElementById('excelPreviewModal'));
+            previewModal.show();
+        }
+
+        function renderPreview(isInternal) {
+            currentPreviewIsInternal = isInternal;
+            const payload = buildPayload();
+            const filterEnabled = document.getElementById('filterMachinedCheck').checked;
+
+            let items = payload.items;
+            if (filterEnabled) {
+                const filtered = items.filter(it => isMeaningfulRemark((it.remarks || '') + ' ' + (it.description || '')));
+                if (filtered.length > 0) items = filtered;
+            }
+
+            document.getElementById('previewCountBadge').innerText = `${items.length} item(s) in export`;
+
+            const cols = isInternal ? 11 : 9;
+            const headers = isInternal ? 
+                ["SL NO", "CLIENT PO ITEM NO", "Description", "PO Qty", "UOM", "Heat Number", "Certificate Number", "MAKE", "Remarks", "SUPPLIER NAME", "SUPPLIER PO #"] :
+                ["SL NO", "CLIENT PO ITEM NO", "Description", "PO Qty", "UOM", "Heat Number", "Certificate Number", "MAKE", "Remarks"];
+
+            let html = `<table class="excel-table">`;
+            
+            // 1. Title Row
+            html += `<tr><td colspan="${cols}" class="excel-title-cell">${isInternal ? 'MSG OILFIELD - STORES SUMMARY SHEET' : 'MSG OILFIELD - SUMMARY SHEET'}</td></tr>`;
+            
+            // 2. Metadata Block
+            if (isInternal) {
+                html += `
+                <tr>
+                    <td colspan="5" class="excel-meta-cell">Client : ${escapeHtml(payload.client || '')}</td>
+                    <td colspan="4" rowspan="3" style="background:#f9f9f9; text-align:center; vertical-align:middle; font-weight:bold; color:#888;">[ Spacer Block ]</td>
+                    <td colspan="2" rowspan="3" style="text-align:center; vertical-align:middle;"><img src="/static/logo.png" style="max-height:45px;"></td>
+                </tr>
+                <tr><td colspan="5" class="excel-meta-cell">PO Number: ${escapeHtml(payload.po_number || '')}</td></tr>
+                <tr><td colspan="5" class="excel-meta-cell">MSG Ref: ${escapeHtml(payload.msg_ref || '')}</td></tr>`;
+            } else {
+                html += `
+                <tr>
+                    <td colspan="5" class="excel-meta-cell">Client : ${escapeHtml(payload.client || '')}</td>
+                    <td colspan="3" rowspan="3" style="background:#f9f9f9; text-align:center; vertical-align:middle; font-weight:bold; color:#888;">[ Spacer ]</td>
+                    <td colspan="1" rowspan="3" style="text-align:center; vertical-align:middle;"><img src="/static/logo.png" style="max-height:45px;"></td>
+                </tr>
+                <tr><td colspan="5" class="excel-meta-cell">PO Number: ${escapeHtml(payload.po_number || '')}</td></tr>
+                <tr><td colspan="5" class="excel-meta-cell">MSG Ref: ${escapeHtml(payload.msg_ref || '')}</td></tr>`;
+            }
+
+            // 3. Header Row
+            html += `<tr>`;
+            headers.forEach(h => {
+                html += `<td class="excel-header-cell">${h} &#9660;</td>`;
+            });
+            html += `</tr>`;
+
+            // 4. Data Rows
+            items.forEach(it => {
+                html += `<tr>`;
+                if (isInternal) {
+                    html += `<td style="text-align:center;">${it.sl_no || ''}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.client_po_item_no || it.sl_no || '')}</td>`;
+                    html += `<td style="white-space:pre-wrap; width:35%;">${escapeHtml(it.description || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.qty || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.uom || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.heat_number || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.certificate_number || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.make || '')}</td>`;
+                    html += `<td>${escapeHtml(it.remarks || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.supplier_name || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.supplier_po || '')}</td>`;
+                } else {
+                    html += `<td style="text-align:center;">${it.sl_no || ''}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.client_po_item_no || it.sl_no || '')}</td>`;
+                    html += `<td style="white-space:pre-wrap; width:40%;">${escapeHtml(it.description || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.qty || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.uom || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.heat_number || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.certificate_number || '')}</td>`;
+                    html += `<td style="text-align:center;">${escapeHtml(it.make || '')}</td>`;
+                    html += `<td>${escapeHtml(it.remarks || '')}</td>`;
+                }
+                html += `</tr>`;
+            });
+
+            html += `</table>`;
+            document.getElementById('excelVisualContent').innerHTML = html;
+        }
+
+        function downloadFromModal() {
+            downloadExcel(currentPreviewIsInternal);
+        }
+
+        function downloadExcel(isInternal = false) {
+            const payload = buildPayload();
+            payload.is_internal = isInternal;
+
+            const prefix = isInternal ? "Internal_Stores_Summary" : "Client_Summary";
+            const poStr = payload.po_number ? "_" + payload.po_number.replace(/\s+/g, '_') : "";
+            const msgStr = payload.msg_ref ? payload.msg_ref.replace(/\s+/g, '_') : "SUMMARY";
+            const filename = `${prefix}_${msgStr}${poStr}.xlsx`;
+
+            fetch('/api/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to generate Excel sheet');
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                fetchHistory();
+            })
+            .catch(err => alert('Error downloading Excel: ' + err.message));
+        }
+
+        function downloadCIPL() {
+            const payload = buildPayload();
+            const poStr = payload.po_number ? "_" + payload.po_number.replace(/\s+/g, '_') : "";
+            const msgStr = payload.msg_ref ? payload.msg_ref.replace(/\s+/g, '_') : "CIPL";
+            const filename = `CIPL_${msgStr}${poStr}.xlsx`;
+
+            fetch('/api/download-cipl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to generate CIPL document');
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                fetchHistory();
+            })
+            .catch(err => alert('Error downloading CIPL: ' + err.message));
+        }
+
+        function exportSupplierPDFs() {
+            const payload = buildPayload();
+
+            fetch('/api/export-supplier-pdfs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to generate Supplier PDFs');
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Supplier_PO_Package_${payload.msg_ref || 'SO'}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                fetchHistory();
+            })
+            .catch(err => alert('Error exporting Supplier PDFs: ' + err.message));
+        }
+    </script>
+
+</body>
+</html>
