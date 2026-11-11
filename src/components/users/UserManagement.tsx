@@ -2,13 +2,15 @@ import React, { useState } from 'react'
 import { db } from '../../services/db'
 import { useAuth } from '../../context/AuthContext'
 import { UserProfile, UserRole } from '../../types'
-import { Users, UserPlus, Shield, CheckCircle2, XCircle, KeyRound, Edit } from 'lucide-react'
+import { Users, UserPlus, Shield, CheckCircle2, XCircle, KeyRound, Edit, Crown } from 'lucide-react'
+import { VipAdminCustomizerModal } from '../admin/VipAdminCustomizerModal'
 
 export const UserManagement: React.FC = () => {
-  const { hasPermission } = useAuth()
+  const { hasPermission, getAllowedModulesForTarget } = useAuth()
   const users = db.getUsers()
 
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
+  const [isVipModalOpen, setIsVipModalOpen] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [department, setDepartment] = useState('Commercial Sales')
@@ -66,20 +68,32 @@ export const UserManagement: React.FC = () => {
         </div>
 
         {canManage && (
-          <button
-            onClick={() => setIsAddUserModalOpen(true)}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow transition-colors flex items-center space-x-1.5"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span>Create New User Account</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsVipModalOpen(true)}
+              className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-extrabold text-xs px-4 py-2.5 rounded-lg shadow-sm border border-amber-300 transition-all flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Crown className="h-4 w-4" />
+              <span>VIP Customizer: Tailor Options for Team</span>
+            </button>
+            <button
+              onClick={() => setIsAddUserModalOpen(true)}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow transition-colors flex items-center space-x-1.5 cursor-pointer"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Create New User Account</span>
+            </button>
+          </div>
         )}
       </div>
 
       {/* Users Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-3 bg-slate-100 font-bold text-xs uppercase text-slate-700 border-b border-slate-200">
-          Authorized Employees & Assigned Permissions
+        <div className="p-3 bg-slate-100 font-bold text-xs uppercase text-slate-700 border-b border-slate-200 flex justify-between items-center">
+          <span>Authorized Employees & Assigned Permissions</span>
+          <span className="text-[11px] text-amber-700 font-bold">
+            👑 Use VIP Customizer to simplify views for each employee
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -89,6 +103,7 @@ export const UserManagement: React.FC = () => {
                 <th className="p-3">Employee Name</th>
                 <th className="p-3">Email Address</th>
                 <th className="p-3">Assigned Role</th>
+                <th className="p-3">Visible Options</th>
                 <th className="p-3">Department</th>
                 <th className="p-3">Status</th>
                 <th className="p-3">Last Login</th>
@@ -105,6 +120,11 @@ export const UserManagement: React.FC = () => {
                       {u.role.replace('_', ' ')}
                     </span>
                   </td>
+                  <td className="p-3">
+                    <span className="bg-amber-50 text-amber-900 border border-amber-200 font-bold px-2 py-0.5 rounded text-[11px] font-mono inline-block">
+                      {getAllowedModulesForTarget(u.id).length} of 20 options
+                    </span>
+                  </td>
                   <td className="p-3 text-slate-600">{u.department}</td>
                   <td className="p-3">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -116,16 +136,24 @@ export const UserManagement: React.FC = () => {
                   <td className="p-3 text-slate-400">{u.last_login || 'Never'}</td>
                   <td className="p-3 text-center whitespace-nowrap">
                     {canManage && (
-                      <div className="flex items-center justify-center space-x-2">
+                      <div className="flex items-center justify-center space-x-2.5">
+                        <button
+                          onClick={() => setIsVipModalOpen(true)}
+                          className="text-[11px] text-amber-700 hover:text-amber-900 font-bold flex items-center space-x-0.5 cursor-pointer"
+                          title="Customize what this employee sees"
+                        >
+                          <Crown className="h-3.5 w-3.5" />
+                          <span>Customize</span>
+                        </button>
                         <button
                           onClick={() => handleToggleStatus(u)}
-                          className="text-[11px] text-slate-600 hover:text-red-700 font-semibold"
+                          className="text-[11px] text-slate-600 hover:text-red-700 font-semibold cursor-pointer"
                         >
                           {u.account_status === 'Active' ? 'Deactivate' : 'Activate'}
                         </button>
                         <button
                           onClick={() => alert(`Password reset link sent to ${u.email}`)}
-                          className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold"
+                          className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
                         >
                           Reset Pass
                         </button>
@@ -219,6 +247,11 @@ export const UserManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      <VipAdminCustomizerModal
+        isOpen={isVipModalOpen}
+        onClose={() => setIsVipModalOpen(false)}
+      />
     </div>
   )
 }

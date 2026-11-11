@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { UserRole } from '../../types'
-import { Search, Shield, User, LogOut, ChevronDown, Bell, Database, Trash2 } from 'lucide-react'
+import { Search, Shield, User, LogOut, ChevronDown, Bell, Database, Trash2, Crown } from 'lucide-react'
 import { db } from '../../services/db'
 import { ClearDataModal } from './ClearDataModal'
+import { VipAdminCustomizerModal } from '../admin/VipAdminCustomizerModal'
 
 interface NavbarProps {
   onSearchSelect: (type: 'heat' | 'order' | 'item' | 'lcode', id: string) => void
@@ -11,11 +12,12 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenSettings }) => {
-  const { currentUser, currentRole, switchDemoRole, logout } = useAuth()
+  const { currentUser, currentRole, switchDemoRole, resetToAdmin, logout } = useAuth()
   const [searchTerm, setSearchTerm] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false)
   const [isClearModalOpen, setIsClearModalOpen] = useState(false)
+  const [isVipModalOpen, setIsVipModalOpen] = useState(false)
 
   const masterStock = db.getMasterStockView()
   const orders = db.getOrders()
@@ -191,6 +193,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenSettings }
             </div>
           )}
 
+          {/* VIP Admin Customizer Button */}
+          <button
+            onClick={() => setIsVipModalOpen(true)}
+            title="VIP Admin: Customize visible modules for each employee or role"
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-extrabold text-xs px-3 py-1.5 rounded-lg shadow-sm border border-amber-300 transition-all cursor-pointer"
+          >
+            <Crown className="h-4 w-4 text-slate-950" />
+            <span className="hidden sm:inline">VIP Customizer</span>
+          </button>
+
           {/* Clear / Reset Data Button for Test Mode */}
           <button
             onClick={() => setIsClearModalOpen(true)}
@@ -268,9 +280,42 @@ export const Navbar: React.FC<NavbarProps> = ({ onSearchSelect, onOpenSettings }
         </div>
       </div>
 
+      {/* Simulation Banner when previewing as employee or non-super_admin role */}
+      {currentUser?.role !== 'super_admin' && (
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 px-4 py-1 text-xs font-bold flex items-center justify-between border-t border-amber-400/50 shadow-xs">
+          <div className="flex items-center space-x-2 truncate">
+            <span className="bg-black text-amber-300 px-1.5 py-0.5 rounded text-[10px] uppercase font-extrabold shrink-0">
+              Simulated Team View
+            </span>
+            <span className="truncate">
+              Viewing as <strong>{currentUser?.employee_name}</strong> ({currentUser?.role.replace('_', ' ')}) — only Admin-customized options are displayed for ease of use!
+            </span>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              onClick={() => setIsVipModalOpen(true)}
+              className="bg-black/20 hover:bg-black/30 text-slate-950 px-2 py-0.5 rounded text-[11px] font-extrabold transition-colors cursor-pointer"
+            >
+              Adjust Options
+            </button>
+            <button
+              onClick={resetToAdmin}
+              className="bg-black text-amber-300 hover:bg-slate-900 px-2.5 py-0.5 rounded text-[11px] font-extrabold transition-colors shadow-xs cursor-pointer"
+            >
+              ← Return to Super Admin
+            </button>
+          </div>
+        </div>
+      )}
+
       <ClearDataModal
         isOpen={isClearModalOpen}
         onClose={() => setIsClearModalOpen(false)}
+      />
+
+      <VipAdminCustomizerModal
+        isOpen={isVipModalOpen}
+        onClose={() => setIsVipModalOpen(false)}
       />
     </header>
   )

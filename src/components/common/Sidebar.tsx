@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard,
@@ -21,8 +21,10 @@ import {
   FileDown,
   Tag,
   Sparkles,
+  Crown,
 } from 'lucide-react'
 import { db } from '../../services/db'
+import { VipAdminCustomizerModal } from '../admin/VipAdminCustomizerModal'
 
 export type NavTabId =
   | 'dashboard'
@@ -52,7 +54,8 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
-  const { canAccessModule } = useAuth()
+  const { canAccessModule, currentUser } = useAuth()
+  const [isVipModalOpen, setIsVipModalOpen] = useState(false)
   const orders = db.getOrders()
   const pendingApprovalsCount = orders.filter(o => o.status === 'Pending Storekeeper Approval').length
   const pendingMTCCount = orders.filter(o => o.status === 'Approved' && !o.mtc_package_generated).length
@@ -116,6 +119,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
             </button>
           )
         })}
+
+        {currentUser?.role === 'super_admin' && (
+          <div className="pt-2 mt-2 border-t border-slate-700/80">
+            <button
+              type="button"
+              onClick={() => setIsVipModalOpen(true)}
+              className="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 transition-all cursor-pointer"
+            >
+              <Crown className="h-4 w-4 text-amber-400 shrink-0" />
+              <span className="truncate">VIP Team Customizer</span>
+            </button>
+          </div>
+        )}
       </nav>
 
       {/* Footer Info */}
@@ -128,6 +144,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
           <span className="text-slate-400">PostgreSQL</span>
         </div>
       </div>
+
+      <VipAdminCustomizerModal
+        isOpen={isVipModalOpen}
+        onClose={() => setIsVipModalOpen(false)}
+      />
     </aside>
   )
 }

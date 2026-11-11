@@ -27,7 +27,7 @@ import { PDFPreviewModal } from './components/common/PDFPreviewModal'
 import { db } from './services/db'
 
 const MainApp: React.FC = () => {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, currentUser, canAccessModule } = useAuth()
   const [activeTab, setActiveTab] = useState<NavTabId>('dashboard')
   const [, setDbVersion] = useState(0)
 
@@ -37,6 +37,21 @@ const MainApp: React.FC = () => {
       setDbVersion(v => v + 1)
     })
   }, [])
+
+  // Auto-switch to first accessible tab if current activeTab is not permitted for this user
+  useEffect(() => {
+    if (!canAccessModule(activeTab)) {
+      const allModules: NavTabId[] = [
+        'dashboard', 'orders', 'sourcing', 'stickers', 'stock', 'items', 'traceability',
+        'allocation', 'loc', 'approvals', 'mtc', 'local_purchase', 'dispatch',
+        'movements', 'returns', 'reports', 'excel', 'users', 'audit', 'settings'
+      ]
+      const firstAllowed = allModules.find(m => canAccessModule(m))
+      if (firstAllowed) {
+        setActiveTab(firstAllowed)
+      }
+    }
+  }, [currentUser, activeTab, canAccessModule])
 
   // Modals state
   const [activeHeatForModal, setActiveHeatForModal] = useState<string | null>(null)
